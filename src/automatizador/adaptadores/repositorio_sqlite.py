@@ -6,8 +6,8 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from automatizador.aplicacao.portas import DocumentoRegistrado, ExecucaoRegistrada, ValorRegistrado
-from automatizador.dominio.modelo import ConteudoDocumento, Linha
+from automatizador.aplicacao.portas import DocumentoRegistrado, ExecucaoRegistrada, ValorRegistrado, VersaoValor
+from automatizador.dominio.modelo import ConteudoDocumento, Linha, ValorCampo
 
 ESQUEMA = """
 CREATE TABLE IF NOT EXISTS execucao (
@@ -31,7 +31,9 @@ CREATE INDEX IF NOT EXISTS documento_hash ON documento(hash_sha256);
 CREATE TABLE IF NOT EXISTS linha (
     id INTEGER PRIMARY KEY,
     documento_id INTEGER NOT NULL REFERENCES documento(id),
-    ordem INTEGER NOT NULL
+    ordem INTEGER NOT NULL,
+    aprovada_por TEXT,
+    aprovada_em TEXT
 );
 CREATE TABLE IF NOT EXISTS valor_campo (
     id INTEGER PRIMARY KEY,
@@ -44,6 +46,7 @@ CREATE TABLE IF NOT EXISTS valor_campo (
     confianca REAL,
     pendencia TEXT,
     versao INTEGER NOT NULL DEFAULT 1,
+    usuario TEXT,
     criado_em TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS exportacao (
@@ -67,6 +70,18 @@ class RepositorioSqlite:
         self._conexao = sqlite3.connect(caminho)
         self._conexao.execute("PRAGMA foreign_keys = ON")
         self._conexao.executescript(ESQUEMA)
+        self._migrar()
+
+    def _migrar(self) -> None:
+        """Atualiza bancos criados por versões anteriores do aplicativo."""
+        colunas_linha = {c[1] for c in self._conexao.execute("PRAGMA table_info(linha)")}
+        colunas_valor = {c[1] for c in self._conexao.execute("PRAGMA table_info(valor_campo)")}
+        with self._conexao:
+            if "aprovada_por" not in colunas_linha:
+                self._conexao.execute("ALTER TABLE linha ADD COLUMN aprovada_por TEXT")
+                self._conexao.execute("ALTER TABLE linha ADD COLUMN aprovada_em TEXT")
+            if "usuario" not in colunas_valor:
+                self._conexao.execute("ALTER TABLE valor_campo ADD COLUMN usuario TEXT")
 
     def iniciar_execucao(self, descricao: str) -> int:
         with self._conexao:
@@ -104,6 +119,7 @@ class RepositorioSqlite:
                 linha_id = self._conexao.execute(
                     "INSERT INTO linha (documento_id, ordem) VALUES (?, ?)", (documento_id, linha.ordem)
                 ).lastrowid
+                linha.id = linha_id
                 self._conexao.executemany(
                     "INSERT INTO valor_campo (linha_id, coluna, valor, origem, trecho, pagina, confianca,"
                     " pendencia, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -124,6 +140,57 @@ class RepositorioSqlite:
                 )
         return DocumentoRegistrado(documento_id, conteudo.caminho.name)
 
+    def registrar_correcao(self, linha_id: int, valor: ValorCampo, usuario: str) -> int:
+        """Grava a correção como nova versão do valor; as versões anteriores continuam no histórico."""
+        with self._conexao:
+            versao = self._conexao.execute(
+                "SELECT COALESCE(MAX(versao), 0) + 1 FROM valor_campo WHERE linha_id = ? AND coluna = ?",
+                (linha_id, valor.coluna),
+            ).fetchone()[0]
+            self._conexao.execute(
+                "INSERT INTO valor_campo (linha_id, coluna, valor, origem, trecho, pagina, confianca,"
+                " pendencia, versao, usuario, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    linha_id,
+                    valor.coluna,
+                    valor.valor,
+                    str(valor.origem),
+                    valor.trecho,
+                    valor.pagina,
+                    valor.confianca,
+                    valor.pendencia,
+                    versao,
+                    usuario,
+                    _agora(),
+                ),
+            )
+        return versao
+
+    def registrar_aprovacao(self, linha_id: int, usuario: str) -> None:
+        with self._conexao:
+            self._conexao.execute(
+                "UPDATE linha SET aprovada_por = ?, aprovada_em = ? WHERE id = ?", (usuario, _agora(), linha_id)
+            )
+
+    def cancelar_aprovacao(self, linha_id: int) -> None:
+        with self._conexao:
+            self._conexao.execute(
+                "UPDATE linha SET aprovada_por = NULL, aprovada_em = NULL WHERE id = ?", (linha_id,)
+            )
+
+    def versoes_do_valor(self, linha_id: int, coluna: str) -> list[VersaoValor]:
+        cursor = self._conexao.execute(
+            "SELECT versao, valor, origem, usuario, criado_em FROM valor_campo"
+            " WHERE linha_id = ? AND coluna = ? ORDER BY versao",
+            (linha_id, coluna),
+        )
+        return [VersaoValor(*registro) for registro in cursor.fetchall()]
+
+    def aprovacao_da_linha(self, linha_id: int) -> tuple[str | None, str | None]:
+        return self._conexao.execute(
+            "SELECT aprovada_por, aprovada_em FROM linha WHERE id = ?", (linha_id,)
+        ).fetchone()
+
     def registrar_exportacao(self, execucao_id: int, destino: Path, quantidade_linhas: int) -> None:
         with self._conexao:
             self._conexao.execute(
@@ -135,7 +202,9 @@ class RepositorioSqlite:
         cursor = self._conexao.execute(
             "SELECT l.ordem, v.coluna, v.valor, v.origem, v.trecho, v.pagina, v.confianca, v.pendencia"
             " FROM valor_campo v JOIN linha l ON l.id = v.linha_id"
-            " WHERE l.documento_id = ? ORDER BY l.ordem, v.id",
+            " WHERE l.documento_id = ? AND v.versao = ("
+            "   SELECT MAX(u.versao) FROM valor_campo u WHERE u.linha_id = v.linha_id AND u.coluna = v.coluna)"
+            " ORDER BY l.ordem, v.id",
             (documento_id,),
         )
         return [ValorRegistrado(*registro) for registro in cursor.fetchall()]

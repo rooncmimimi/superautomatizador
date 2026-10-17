@@ -1,7 +1,8 @@
 """Linha de comando.
 
     automatizador gerar-ficticios PASTA [--quantidade N]
-    automatizador processar PDF [PDF ...] --saida PLANILHA.xlsx [--substituir] [--banco ARQUIVO.db]
+    automatizador processar PDF [PDF ...] --saida PLANILHA.xlsx [--aprovar-todas] [--substituir]
+                            [--banco ARQUIVO.db]
                             [--ia simulada|externa] [--modelo MODELO] [--respostas PASTA]
     automatizador medir-acerto PASTA [--modelo MODELO ...] [--ia simulada|externa]
     automatizador janela
@@ -39,21 +40,31 @@ def _processar(args) -> int:
         print(f"configuração ausente: {erro}", file=sys.stderr)
         return 1
     try:
-        resultado = processador.executar(args.arquivos, args.saida, substituir=args.substituir)
+        resultado = processador.executar(
+            args.arquivos, args.saida, substituir=args.substituir, aprovar_todas=args.aprovar_todas
+        )
     finally:
         processador.fechar()
     for erro in resultado.erros:
         print(f"erro em {erro.arquivo}: {erro.mensagem}", file=sys.stderr)
-    if resultado.destino is None:
+    if not resultado.linhas:
         print("nenhuma linha gerada; planilha não criada", file=sys.stderr)
         return 1
     pendentes = sum(
         1 for _, linha in resultado.linhas for valor in linha.valores.values() if not valor.confirmado
     )
-    print(f"{len(resultado.linhas)} linha(s) gravada(s) em {resultado.destino}; {pendentes} campo(s) pendente(s)")
     for documento, linha in resultado.linhas:
         if linha.pendente:
             print(f"linha {linha.ordem} de {documento} precisa de revisão: {'; '.join(linha.pendencias)}")
+    if not args.aprovar_todas:
+        print(
+            f"{len(resultado.linhas)} linha(s) lida(s), {pendentes} campo(s) pendente(s); nenhuma planilha gravada. "
+            "Revise na janela (automatizador janela) ou repita com --aprovar-todas."
+        )
+        return 0 if not resultado.erros else 2
+    if resultado.destino is None:
+        return 1
+    print(f"{len(resultado.linhas)} linha(s) gravada(s) em {resultado.destino}; {pendentes} campo(s) pendente(s)")
     return 0 if not resultado.erros else 2
 
 
@@ -110,6 +121,9 @@ def main(argv: list[str] | None = None) -> int:
     processar.add_argument("--respostas", type=Path, help="pasta com respostas gravadas da IA simulada")
     processar.add_argument("--ia", choices=[IA_SIMULADA, IA_EXTERNA], default=IA_SIMULADA)
     processar.add_argument("--modelo", help="modelo do serviço de IA externo (ex.: openai/gpt-4o-mini)")
+    processar.add_argument(
+        "--aprovar-todas", action="store_true", help="aprova todas as linhas lidas e grava a planilha sem revisão na tela"
+    )
     processar.add_argument("--substituir", action="store_true", help="substitui a planilha de saída se já existir")
     processar.set_defaults(funcao=_processar)
 

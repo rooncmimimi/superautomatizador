@@ -27,8 +27,10 @@ Gerar um CT-e e uma NFS-e fictícios e processá-los:
 
 ```powershell
 automatizador gerar-ficticios exemplos
-automatizador processar exemplos\cte_1234.pdf exemplos\nfse_5501.pdf --saida saida\controle.xlsx
+automatizador processar exemplos\cte_1234.pdf exemplos\nfse_5501.pdf --saida saida\controle.xlsx --aprovar-todas
 ```
+
+Sem `--aprovar-todas` o programa só lê e mostra o que encontrou, sem gravar planilha: nenhuma linha é gravada sem aprovação.
 
 O aplicativo nunca sobrescreve uma planilha que já existe; use `--substituir` se for essa a intenção.
 
@@ -47,7 +49,7 @@ $env:AUTOMATIZADOR_IA_MODELO = "openai/gpt-4o-mini"
 3. Processe com a IA externa, ou compare modelos pela taxa de acerto nos fictícios:
 
 ```powershell
-automatizador processar exemplos\nfse_5501.pdf --saida saida\ia.xlsx --ia externa
+automatizador processar exemplos\nfse_5501.pdf --saida saida\ia.xlsx --ia externa --aprovar-todas
 automatizador medir-acerto exemplos --modelo openai/gpt-4o-mini --modelo google/gemini-2.5-flash
 ```
 
@@ -58,6 +60,8 @@ Abrir a janela:
 ```powershell
 automatizador janela
 ```
+
+Na janela: **Adicionar PDFs…** → **Ler documentos** → revise a tabela (células amarelas estão pendentes; clique numa célula para ver o trecho e a página do PDF com o trecho destacado; dê dois cliques para corrigir) → **Aprovar** as linhas → **Exportar aprovadas…**. Cada correção fica no histórico como nova versão, com usuário e data.
 
 Rodar os testes:
 

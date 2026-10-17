@@ -91,6 +91,7 @@ def validar_linha(linha: Linha, problemas_do_documento: list[str]) -> None:
         if _data(vencimento.valor) < _data(nota.valor):
             vencimento.pendencia = PENDENCIA_VENCIMENTO_ANTES
 
+    linha.problemas_documento = list(problemas_do_documento)
     linha.pendencias = list(problemas_do_documento)
     for coluna in COLUNAS_OBRIGATORIAS:
         valor = linha.valores.get(coluna)

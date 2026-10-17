@@ -37,7 +37,7 @@ def test_cte_ficticio_vira_uma_linha_com_as_18_colunas(tmp_path, cte_ficticio):
     caso, _ = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
     saida = tmp_path / "saida.xlsx"
 
-    caso.executar([cte_ficticio.pdf], saida)
+    caso.executar([cte_ficticio.pdf], saida, aprovar_todas=True)
 
     cabecalho, linhas = _linhas_da_planilha(saida)
     assert list(cabecalho) == COLUNAS_CONTROLE
@@ -53,7 +53,7 @@ def test_valores_da_planilha_conferem_com_o_gabarito(tmp_path, cte_ficticio):
     caso, _ = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
     saida = tmp_path / "saida.xlsx"
 
-    caso.executar([cte_ficticio.pdf], saida)
+    caso.executar([cte_ficticio.pdf], saida, aprovar_todas=True)
 
     gabarito = json.loads(cte_ficticio.gabarito.read_text(encoding="utf-8"))
     cabecalho, linhas = _linhas_da_planilha(saida)
@@ -66,7 +66,7 @@ def test_valores_da_planilha_conferem_com_o_gabarito(tmp_path, cte_ficticio):
 def test_cada_valor_tem_origem_e_evidencia_no_banco(tmp_path, cte_ficticio):
     caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
 
-    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx")
+    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx", aprovar_todas=True)
 
     valores = repositorio.valores_do_documento(resultado.documentos[0].id)
     preenchidos = [v for v in valores if v.valor is not None and v.coluna != "TIPO DE NOTA"]
@@ -90,7 +90,7 @@ def test_valor_sem_evidencia_no_documento_fica_pendente_e_vazio(tmp_path, cte_fi
     caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
     saida = tmp_path / "saida.xlsx"
 
-    resultado = caso.executar([cte_ficticio.pdf], saida)
+    resultado = caso.executar([cte_ficticio.pdf], saida, aprovar_todas=True)
 
     cabecalho, linhas = _linhas_da_planilha(saida)
     assert dict(zip(cabecalho, linhas[0]))["PEDIDO"] is None
@@ -107,7 +107,7 @@ def test_valor_que_nao_aparece_no_trecho_fica_pendente(tmp_path, cte_ficticio):
     cte_ficticio.resposta_simulada.write_text(json.dumps(resposta), encoding="utf-8")
     caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
 
-    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx")
+    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx", aprovar_todas=True)
 
     valor = next(
         v for v in repositorio.valores_do_documento(resultado.documentos[0].id) if v.coluna == "VALOR TOTAL"
@@ -118,7 +118,7 @@ def test_valor_que_nao_aparece_no_trecho_fica_pendente(tmp_path, cte_ficticio):
 def test_campo_ausente_fica_registrado_como_ausente(tmp_path, cte_ficticio):
     caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
 
-    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx")
+    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx", aprovar_todas=True)
 
     codigo = next(
         v
@@ -135,7 +135,7 @@ def test_resposta_fora_do_contrato_falha_a_execucao_sem_gerar_planilha(tmp_path,
     caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
     saida = tmp_path / "saida.xlsx"
 
-    resultado = caso.executar([cte_ficticio.pdf], saida)
+    resultado = caso.executar([cte_ficticio.pdf], saida, aprovar_todas=True)
 
     assert resultado.erros
     assert not saida.exists()
@@ -161,7 +161,7 @@ def test_valor_em_branco_conta_como_ausente(tmp_path, cte_ficticio):
     _alterar_resposta(cte_ficticio, alterar)
     caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
 
-    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx")
+    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx", aprovar_todas=True)
 
     fornecedor = _valor(repositorio, resultado, "FORNECEDOR")
     assert fornecedor.origem == "ausente"
@@ -175,7 +175,7 @@ def test_pedaco_de_um_numero_nao_conta_como_evidencia(tmp_path, cte_ficticio):
     _alterar_resposta(cte_ficticio, alterar)
     caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
 
-    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx")
+    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx", aprovar_todas=True)
 
     assert _valor(repositorio, resultado, "VALOR TOTAL").pendencia == "valor não aparece no trecho citado"
 
@@ -185,7 +185,7 @@ def test_nao_sobrescreve_planilha_existente(tmp_path, cte_ficticio):
     saida.write_bytes(b"planilha anterior")
     caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
 
-    resultado = caso.executar([cte_ficticio.pdf], saida)
+    resultado = caso.executar([cte_ficticio.pdf], saida, aprovar_todas=True)
 
     assert saida.read_bytes() == b"planilha anterior"
     assert resultado.destino is None
@@ -198,7 +198,7 @@ def test_substitui_planilha_existente_quando_pedido(tmp_path, cte_ficticio):
     saida.write_bytes(b"planilha anterior")
     caso, _ = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
 
-    resultado = caso.executar([cte_ficticio.pdf], saida, substituir=True)
+    resultado = caso.executar([cte_ficticio.pdf], saida, substituir=True, aprovar_todas=True)
 
     assert resultado.destino == saida
     assert len(_linhas_da_planilha(saida)[1]) == 1
@@ -209,7 +209,7 @@ def test_ia_sem_nenhuma_linha_e_erro(tmp_path, cte_ficticio):
     caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
     saida = tmp_path / "saida.xlsx"
 
-    resultado = caso.executar([cte_ficticio.pdf], saida)
+    resultado = caso.executar([cte_ficticio.pdf], saida, aprovar_todas=True)
 
     assert "nenhuma linha" in resultado.erros[0].mensagem
     assert not saida.exists()
@@ -233,7 +233,7 @@ def test_planilha_bloqueada_falha_a_execucao_sem_quebrar(tmp_path, cte_ficticio)
         _ExportadorQueFalha(PermissionError("arquivo aberto no Excel")),
     )
 
-    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx")
+    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx", aprovar_todas=True)
 
     assert resultado.destino is None
     assert "não foi possível gravar a planilha" in resultado.erros[0].mensagem
@@ -247,7 +247,7 @@ def test_erro_inesperado_fica_registrado_no_historico(tmp_path, cte_ficticio):
     )
 
     with pytest.raises(RuntimeError):
-        caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx")
+        caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx", aprovar_todas=True)
 
     ultima = repositorio.execucoes()[-1]
     assert ultima.resultado == "falhou"
@@ -258,7 +258,7 @@ def test_nfse_ficticia_confere_com_o_gabarito(tmp_path, nfse_ficticia):
     caso, _ = _caso_de_uso(tmp_path, nfse_ficticia.pdf.parent)
     saida = tmp_path / "saida.xlsx"
 
-    caso.executar([nfse_ficticia.pdf], saida)
+    caso.executar([nfse_ficticia.pdf], saida, aprovar_todas=True)
 
     gabarito = json.loads(nfse_ficticia.gabarito.read_text(encoding="utf-8"))["linhas"][0]
     cabecalho, linhas = _linhas_da_planilha(saida)
@@ -278,7 +278,7 @@ def test_tipo_de_nota_vem_de_regra_e_nao_da_ia(tmp_path, cte_ficticio, nfse_fict
     _alterar_resposta(nfse_ficticia, alterar)
     caso, repositorio = _caso_de_uso(tmp_path, nfse_ficticia.pdf.parent)
 
-    resultado = caso.executar([cte_ficticio.pdf, nfse_ficticia.pdf], tmp_path / "saida.xlsx")
+    resultado = caso.executar([cte_ficticio.pdf, nfse_ficticia.pdf], tmp_path / "saida.xlsx", aprovar_todas=True)
 
     tipos = {nome: linha.valores["TIPO DE NOTA"] for nome, linha in resultado.linhas}
     assert tipos["cte_1234.pdf"].valor == "CT-e"
@@ -294,7 +294,7 @@ def test_valor_fora_do_formato_fica_pendente_e_linha_precisa_de_revisao(tmp_path
     caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
     saida = tmp_path / "saida.xlsx"
 
-    resultado = caso.executar([cte_ficticio.pdf], saida)
+    resultado = caso.executar([cte_ficticio.pdf], saida, aprovar_todas=True)
 
     cabecalho, linhas = _linhas_da_planilha(saida)
     assert dict(zip(cabecalho, linhas[0]))["VALOR TOTAL"] is None
