@@ -284,3 +284,21 @@ def test_tipo_de_nota_vem_de_regra_e_nao_da_ia(tmp_path, cte_ficticio, nfse_fict
     assert tipos["cte_1234.pdf"].valor == "CT-e"
     assert tipos["nfse_5501.pdf"].valor == "Nota Fiscal"
     assert {str(v.origem) for v in tipos.values()} == {"derivado_regra"}
+
+
+def test_valor_fora_do_formato_fica_pendente_e_linha_precisa_de_revisao(tmp_path, cte_ficticio):
+    def alterar(resposta):
+        resposta["linhas"][0]["campos"]["VALOR TOTAL"]["valor"] = "R$ 1.850,40"
+
+    _alterar_resposta(cte_ficticio, alterar)
+    caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
+    saida = tmp_path / "saida.xlsx"
+
+    resultado = caso.executar([cte_ficticio.pdf], saida)
+
+    cabecalho, linhas = _linhas_da_planilha(saida)
+    assert dict(zip(cabecalho, linhas[0]))["VALOR TOTAL"] is None
+    assert _valor(repositorio, resultado, "VALOR TOTAL").pendencia == "valor não está no formato 1.234,56"
+    linha = resultado.linhas[0][1]
+    assert linha.pendente
+    assert linha.pendencias == ["VALOR TOTAL: valor não está no formato 1.234,56"]

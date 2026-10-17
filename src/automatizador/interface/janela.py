@@ -103,6 +103,9 @@ class JanelaPrincipal(QMainWindow):
                 elif valor.trecho:
                     item.setToolTip(f"página {valor.pagina}: {valor.trecho}")
                 self.tabela.setItem(numero, indice, item)
+            cabecalho = QTableWidgetItem("⚠" if linha.pendente else str(numero + 1))
+            cabecalho.setToolTip("\n".join(linha.pendencias))
+            self.tabela.setVerticalHeaderItem(numero, cabecalho)
         mensagens = [f"{len(resultado.linhas)} linha(s) gerada(s)"]
         if resultado.destino:
             mensagens.append(f"planilha salva em {resultado.destino}")

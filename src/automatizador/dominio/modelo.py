@@ -75,6 +75,12 @@ class ValorCampo:
 class Linha:
     ordem: int
     valores: dict[str, ValorCampo] = field(default_factory=dict)
+    pendencias: list[str] = field(default_factory=list)
+
+    @property
+    def pendente(self) -> bool:
+        """Falta algo obrigatório ou o documento tem problema: a linha precisa de revisão."""
+        return bool(self.pendencias)
 
 
 def _normalizar(texto: str) -> str:

@@ -51,6 +51,9 @@ def _processar(args) -> int:
         1 for _, linha in resultado.linhas for valor in linha.valores.values() if not valor.confirmado
     )
     print(f"{len(resultado.linhas)} linha(s) gravada(s) em {resultado.destino}; {pendentes} campo(s) pendente(s)")
+    for documento, linha in resultado.linhas:
+        if linha.pendente:
+            print(f"linha {linha.ordem} de {documento} precisa de revisão: {'; '.join(linha.pendencias)}")
     return 0 if not resultado.erros else 2
 
 
