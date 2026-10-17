@@ -118,3 +118,56 @@ def test_banco_de_versao_anterior_e_atualizado(tmp_path):
     assert {"aprovada_por", "aprovada_em"} <= {c[1] for c in conexao.execute("PRAGMA table_info(linha)")}
     assert "usuario" in {c[1] for c in conexao.execute("PRAGMA table_info(valor_campo)")}
     conexao.close()
+
+
+def test_corrigir_a_data_da_nota_refaz_a_conferencia_do_vencimento(tmp_path, cte_ficticio):
+    caso, _ = _caso(tmp_path, cte_ficticio.pdf.parent)
+    linha = caso.ler([cte_ficticio.pdf]).linhas[0][1]  # nota 03/10/2026, vencimento 02/11/2026
+
+    caso.corrigir(linha, "DATA DA NOTA", "10/11/2026", "ana")
+    assert linha.valores["DATA DO VENCIMENTO"].pendencia == "vencimento anterior à data da nota"
+
+    caso.corrigir(linha, "DATA DA NOTA", "03/10/2026", "ana")
+    assert linha.valores["DATA DO VENCIMENTO"].confirmado
+
+
+def test_correcao_que_nao_foi_gravada_nao_muda_a_linha(tmp_path, cte_ficticio):
+    caso, repositorio = _caso(tmp_path, cte_ficticio.pdf.parent)
+    linha = caso.ler([cte_ficticio.pdf]).linhas[0][1]
+    caso.aprovar([linha], "ana")
+
+    def falha(*_):
+        raise sqlite3.OperationalError("database is locked")
+
+    repositorio.registrar_correcao = falha
+    try:
+        caso.corrigir(linha, "FORNECEDOR", "Outro", "ana")
+    except sqlite3.OperationalError:
+        pass
+
+    assert linha.valores["FORNECEDOR"].valor == "Transportadora Exemplo Ltda"
+    assert linha.aprovada
+
+
+def test_pdfs_com_o_mesmo_nome_em_pastas_diferentes_guardam_cada_um_o_seu_caminho(tmp_path):
+    from automatizador.ficticios.gerador import gerar_cte_ficticio
+
+    primeiro = gerar_cte_ficticio(tmp_path / "janeiro", numero=1234).pdf
+    segundo = gerar_cte_ficticio(tmp_path / "fevereiro", numero=1234).pdf
+    repositorio = RepositorioSqlite(tmp_path / "a.db")
+    caso = ProcessarDocumentos(LeitorPdf(), IASimulada(), repositorio, ExportadorXlsx())
+
+    lote = caso.ler([primeiro, segundo])
+
+    assert [lote.caminho_da_linha(linha) for _, linha in lote.linhas] == [primeiro, segundo]
+
+
+def test_documento_com_erro_fica_registrado_na_execucao_em_revisao(tmp_path, cte_ficticio):
+    quebrado = tmp_path / "quebrado.pdf"
+    quebrado.write_bytes(b"isto nao e um pdf")
+    caso, repositorio = _caso(tmp_path, cte_ficticio.pdf.parent)
+
+    caso.ler([cte_ficticio.pdf, quebrado])
+
+    execucao = repositorio.execucoes()[-1]
+    assert (execucao.resultado, execucao.erro) == ("aguardando_revisao", "1 erro(s)")

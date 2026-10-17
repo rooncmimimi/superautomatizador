@@ -65,11 +65,15 @@ class ResultadoProcessamento:
     erros: list[ErroDocumento] = field(default_factory=list)
     destino: Path | None = None
     execucao: int | None = None
-    caminhos: dict[str, Path] = field(default_factory=dict)
+    # id da linha -> PDF de onde ela veio (dois PDFs podem ter o mesmo nome em pastas diferentes)
+    caminhos: dict[int, Path] = field(default_factory=dict)
 
     @property
     def aprovadas(self) -> list[tuple[str, Linha]]:
         return [(nome, linha) for nome, linha in self.linhas if linha.aprovada]
+
+    def caminho_da_linha(self, linha: Linha) -> Path | None:
+        return self.caminhos.get(linha.id)
 
 
 SITUACAO_EM_REVISAO = "aguardando_revisao"
@@ -107,7 +111,8 @@ class ProcessarDocumentos:
                 except (RespostaInvalida, ErroServicoIA, OSError, ValueError) as erro:
                     lote.erros.append(ErroDocumento(Path(arquivo).name, str(erro)))
         if lote.linhas:
-            self._repositorio.finalizar_execucao(lote.execucao, SITUACAO_EM_REVISAO)
+            erro = f"{len(lote.erros)} erro(s)" if lote.erros else None
+            self._repositorio.finalizar_execucao(lote.execucao, SITUACAO_EM_REVISAO, erro)
         else:
             self._repositorio.finalizar_execucao(lote.execucao, "falhou", f"{len(lote.erros)} erro(s)")
         return lote
@@ -116,17 +121,22 @@ class ProcessarDocumentos:
         """Troca um valor pelo informado pelo usuário, registrando nova versão com usuário e data.
 
         A linha volta a precisar de aprovação, e as validações rodam de novo sobre o valor corrigido.
+        A linha só muda depois de a correção ficar gravada no histórico.
         """
         novo_valor = (novo_valor or "").strip() or None
         valor = ValorCampo(
             coluna, novo_valor, Origem.MANUAL, pendencia=None if novo_valor else PENDENCIA_AUSENTE
         )
-        linha.valores[coluna] = valor
-        validar_linha(linha, linha.problemas_documento)
+        corrigida = replace(linha, valores={c: replace(v) for c, v in linha.valores.items()})
+        corrigida.valores[coluna] = valor
+        validar_linha(corrigida, linha.problemas_documento)
+
         self._repositorio.registrar_correcao(linha.id, valor, usuario)
         if linha.aprovada:
             self._repositorio.cancelar_aprovacao(linha.id)
-            linha.aprovada = False
+        linha.valores = corrigida.valores
+        linha.pendencias = corrigida.pendencias
+        linha.aprovada = False
         return valor
 
     def aprovar(self, linhas: list[Linha], usuario: str) -> None:
@@ -202,7 +212,7 @@ class ProcessarDocumentos:
         linhas = montar_linhas(sugestoes, conteudo, self._colunas)
         documento = self._repositorio.registrar_documento(lote.execucao, conteudo, linhas)
         lote.documentos.append(documento)
-        lote.caminhos[documento.nome] = conteudo.caminho
+        lote.caminhos.update((linha.id, conteudo.caminho) for linha in linhas)
         lote.linhas.extend((documento.nome, linha) for linha in linhas)
 
 

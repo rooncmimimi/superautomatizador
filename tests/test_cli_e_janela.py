@@ -124,3 +124,91 @@ def test_lote_de_20_documentos_revisado_com_a_pagina_dentro_do_aplicativo(qtbot,
     janela.aprovar_todas()
     janela.exportar(tmp_path / "lote.xlsx")
     assert load_workbook(tmp_path / "lote.xlsx")["Controle"].max_row == 21
+
+
+def test_dica_da_celula_mostra_texto_do_documento_sem_interpretar_html(qtbot, tmp_path, cte_ficticio):
+    janela = _janela(qtbot, tmp_path)
+    janela.definir_arquivos([cte_ficticio.pdf])
+    lote = janela.ler()
+    lote.linhas[0][1].valores["FORNECEDOR"].trecho = "<b>Emitente</b>"
+
+    janela.aprovar_todas()  # redesenha a linha
+
+    dica = janela.tabela.item(0, _coluna(janela, "FORNECEDOR")).toolTip()
+    assert "&lt;b&gt;Emitente&lt;/b&gt;" in dica
+
+
+def test_correcao_que_falha_ao_gravar_avisa_e_volta_o_valor(qtbot, tmp_path, cte_ficticio, monkeypatch):
+    import sqlite3
+
+    from PySide6.QtWidgets import QMessageBox
+
+    janela = _janela(qtbot, tmp_path)
+    janela.definir_arquivos([cte_ficticio.pdf])
+    janela.ler()
+    avisos = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *args: avisos.append(args[2]))
+
+    def falha(*_):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(janela._processador, "corrigir", falha)
+    janela.tabela.item(0, _coluna(janela, "FORNECEDOR")).setText("Outro")
+
+    assert janela.tabela.item(0, _coluna(janela, "FORNECEDOR")).text() == "Transportadora Exemplo Ltda"
+    assert "database is locked" in avisos[0]
+
+
+def test_pagina_que_nao_pode_ser_mostrada_limpa_a_imagem_anterior(qtbot, tmp_path, cte_ficticio):
+    from automatizador.adaptadores.imagem_pagina import renderizar_pagina
+
+    chamadas = []
+
+    def renderizador(caminho, pagina, destaques):
+        chamadas.append(caminho)
+        if len(chamadas) > 1:
+            raise RuntimeError("PDF corrompido")
+        return renderizar_pagina(caminho, pagina, destaques)
+
+    janela = _janela(qtbot, tmp_path, renderizador=renderizador)
+    janela.definir_arquivos([cte_ficticio.pdf])
+    janela.ler()
+    janela.mostrar_detalhe(0, _coluna(janela, "VALOR TOTAL"))
+    assert not janela.imagem.pixmap().isNull()
+
+    janela.mostrar_detalhe(0, _coluna(janela, "FORNECEDOR"))
+
+    assert janela.imagem.pixmap().isNull()
+    assert "PDF corrompido" in janela.imagem.text()
+
+
+def test_ler_outro_lote_limpa_o_painel_do_anterior(qtbot, tmp_path, cte_ficticio):
+    from automatizador.adaptadores.imagem_pagina import renderizar_pagina
+
+    janela = _janela(qtbot, tmp_path, renderizador=renderizar_pagina)
+    janela.definir_arquivos([cte_ficticio.pdf])
+    janela.ler()
+    janela.mostrar_detalhe(0, _coluna(janela, "VALOR TOTAL"))
+
+    janela.ler()
+
+    assert janela.imagem.pixmap().isNull()
+    assert "Trecho" not in janela.detalhe.text()
+
+
+def test_reler_pede_confirmacao_quando_ha_linhas_aprovadas_nao_exportadas(qtbot, tmp_path, cte_ficticio, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    janela = _janela(qtbot, tmp_path)
+    janela.definir_arquivos([cte_ficticio.pdf])
+    lote = janela.ler()
+    janela.aprovar_todas()
+    perguntas = []
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *args, **kw: perguntas.append(args[2]) or QMessageBox.StandardButton.No
+    )
+
+    janela.botao_ler.click()
+
+    assert perguntas
+    assert janela._lote is lote

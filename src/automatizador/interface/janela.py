@@ -33,6 +33,7 @@ COR_APROVADA = QColor("#E2F0D9")
 COLUNA_APROVADA = "APROVADA"
 COLUNA_DOCUMENTO = "DOCUMENTO"
 COLUNAS_FIXAS = [COLUNA_APROVADA, COLUNA_DOCUMENTO]
+TEXTO_DETALHE_INICIAL = "Selecione uma célula para ver de onde veio o valor."
 
 # (caminho do PDF, página, textos a destacar em ordem de preferência) -> imagem PNG
 Renderizador = Callable[[Path, int, list[str]], bytes]
@@ -69,7 +70,7 @@ class JanelaPrincipal(QMainWindow):
         self.tabela.setHorizontalHeaderLabels(COLUNAS_FIXAS + self._colunas)
         self.tabela.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
 
-        self.detalhe = QLabel("Selecione uma célula para ver de onde veio o valor.")
+        self.detalhe = QLabel(TEXTO_DETALHE_INICIAL)
         self.detalhe.setWordWrap(True)
         self.detalhe.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.imagem = QLabel()
@@ -123,6 +124,9 @@ class JanelaPrincipal(QMainWindow):
     def ler(self) -> ResultadoProcessamento:
         # Por enquanto roda na própria janela; com documentos maiores passa para segundo plano.
         self._lote = self._processador.ler(self._arquivos)
+        self.detalhe.setText(TEXTO_DETALHE_INICIAL)
+        self.imagem.clear()
+        self.tabela.clearSelection()
         self._mostrar_tudo()
         tem_linhas = bool(self._lote.linhas)
         self.botao_aprovar.setEnabled(tem_linhas)
@@ -151,7 +155,7 @@ class JanelaPrincipal(QMainWindow):
     def mostrar_detalhe(self, indice_linha: int, indice_coluna: int) -> None:
         if not self._lote or indice_linha < 0 or indice_coluna < len(COLUNAS_FIXAS):
             return
-        documento, linha = self._lote.linhas[indice_linha]
+        _, linha = self._lote.linhas[indice_linha]
         coluna = self._colunas[indice_coluna - len(COLUNAS_FIXAS)]
         valor = linha.valores[coluna]
         # Texto vindo do documento é escapado: o rótulo interpreta HTML.
@@ -164,7 +168,7 @@ class JanelaPrincipal(QMainWindow):
             partes.append("Linha precisa de revisão: " + escape("; ".join(linha.pendencias)))
         self.detalhe.setText("<br>".join(partes))
         destaques = [valor.trecho, valor.valor] if valor.trecho else []
-        self._mostrar_pagina(self._lote.caminhos.get(documento), valor.pagina or 1, destaques)
+        self._mostrar_pagina(self._lote.caminho_da_linha(linha), valor.pagina or 1, destaques)
 
     def closeEvent(self, evento) -> None:
         self._processador.fechar()
@@ -189,7 +193,10 @@ class JanelaPrincipal(QMainWindow):
         anterior = linha.valores[coluna].valor_para_exportar or ""
         if texto.strip() == anterior:
             return
-        self._processador.corrigir(linha, coluna, texto, self._usuario)
+        try:
+            self._processador.corrigir(linha, coluna, texto, self._usuario)
+        except Exception as erro:
+            QMessageBox.critical(self, "Correção não gravada", f"A correção não foi gravada: {erro}")
         self._mostrar_linha(indice_linha)
         self._atualizar_status()
         self.mostrar_detalhe(indice_linha, indice_coluna)
@@ -215,7 +222,7 @@ class JanelaPrincipal(QMainWindow):
                     fundo, dica = QBrush(), f"página {valor.pagina}: {valor.trecho}" if valor.trecho else ""
                 self._preencher(indice, posicao, valor.valor_para_exportar or "", fundo, dica)
             cabecalho = QTableWidgetItem("⚠" if linha.pendente else str(indice + 1))
-            cabecalho.setToolTip("\n".join(linha.pendencias))
+            cabecalho.setToolTip(_dica("\n".join(linha.pendencias)))
             self.tabela.setVerticalHeaderItem(indice, cabecalho)
         finally:
             self._atualizando = False
@@ -232,7 +239,7 @@ class JanelaPrincipal(QMainWindow):
             self.tabela.setItem(linha, coluna, item)
         item.setText(texto)
         item.setBackground(fundo)
-        item.setToolTip(dica)
+        item.setToolTip(_dica(dica))
 
     def _atualizar_status(self) -> None:
         total = len(self._lote.linhas)
@@ -245,10 +252,12 @@ class JanelaPrincipal(QMainWindow):
 
     def _mostrar_pagina(self, caminho: Path | None, pagina: int, destaques: list[str]) -> None:
         if not self._renderizador or caminho is None:
+            self.imagem.clear()
             return
         try:
             png = self._renderizador(caminho, pagina, destaques)
-        except (OSError, ValueError) as erro:
+        except Exception as erro:  # PDF corrompido ou ilegível: o resto da revisão continua
+            self.imagem.clear()
             self.imagem.setText(f"Não foi possível mostrar a página: {erro}")
             return
         imagem = QPixmap()
@@ -262,6 +271,15 @@ class JanelaPrincipal(QMainWindow):
             self.definir_arquivos([Path(a) for a in arquivos])
 
     def _ler_com_avisos(self) -> None:
+        if self._lote and self._lote.aprovadas and self._lote.destino is None:
+            resposta = QMessageBox.question(
+                self,
+                "Ler de novo?",
+                "Há linhas aprovadas que ainda não foram exportadas. Ler de novo descarta esta revisão"
+                " da tela (as correções continuam no histórico). Continuar?",
+            )
+            if resposta != QMessageBox.StandardButton.Yes:
+                return
         try:
             lote = self.ler()
         except Exception as erro:
@@ -288,6 +306,13 @@ class JanelaPrincipal(QMainWindow):
         novos_erros = self._lote.erros[erros_antes:]
         if novos_erros:
             QMessageBox.warning(self, "Erro ao exportar", "\n".join(e.mensagem for e in novos_erros))
+
+
+def _dica(texto: str) -> str:
+    """Dica com texto do documento: escapada, para o Qt não interpretar como HTML."""
+    if not texto:
+        return ""
+    return "<p style='white-space:pre-wrap'>" + escape(texto) + "</p>"
 
 
 def executar_janela(banco: Path | None = None) -> int:

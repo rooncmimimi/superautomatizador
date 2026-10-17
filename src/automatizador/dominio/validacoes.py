@@ -20,6 +20,14 @@ PENDENCIA_VENCIMENTO_ANTES = "vencimento anterior à data da nota"
 PENDENCIA_CNPJ = "CNPJ com dígito verificador inválido no documento"
 PENDENCIA_CHAVE = "chave de acesso com dígito verificador inválido no documento"
 
+# Pendências que as validações põem e tiram; as de evidência (trecho, ausência) ficam como estão.
+_PENDENCIAS_DE_VALIDACAO = {
+    PENDENCIA_VALOR_INVALIDO,
+    PENDENCIA_DATA_INVALIDA,
+    PENDENCIA_SO_DIGITOS,
+    PENDENCIA_VENCIMENTO_ANTES,
+}
+
 _VALOR = re.compile(r"\d{1,3}(\.\d{3})*,\d{2}")
 _CNPJ = re.compile(r"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b")
 _CHAVE = re.compile(r"(?<!\d)(?:\d{4}\s?){10}\d{4}(?!\d)")
@@ -80,7 +88,14 @@ def validar_documento(conteudo: ConteudoDocumento) -> list[str]:
 
 
 def validar_linha(linha: Linha, problemas_do_documento: list[str]) -> None:
-    """Marca pendências nos valores reprovados e registra os motivos da linha."""
+    """Marca pendências nos valores reprovados e registra os motivos da linha.
+
+    Pode rodar de novo depois de uma correção: as pendências de validação anteriores são refeitas.
+    """
+    for valor in linha.valores.values():
+        if valor.pendencia in _PENDENCIAS_DE_VALIDACAO:
+            valor.pendencia = None
+
     for coluna, (teste, motivo) in REGRAS_DE_FORMATO.items():
         valor = linha.valores.get(coluna)
         if valor and valor.confirmado and not teste(valor.valor):
