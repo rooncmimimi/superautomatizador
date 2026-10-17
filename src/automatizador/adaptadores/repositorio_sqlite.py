@@ -140,42 +140,45 @@ class RepositorioSqlite:
                 )
         return DocumentoRegistrado(documento_id, conteudo.caminho.name)
 
-    def registrar_correcao(self, linha_id: int, valor: ValorCampo, usuario: str) -> int:
-        """Grava a correção como nova versão do valor; as versões anteriores continuam no histórico."""
-        with self._conexao:
-            versao = self._conexao.execute(
-                "SELECT COALESCE(MAX(versao), 0) + 1 FROM valor_campo WHERE linha_id = ? AND coluna = ?",
-                (linha_id, valor.coluna),
-            ).fetchone()[0]
-            self._conexao.execute(
-                "INSERT INTO valor_campo (linha_id, coluna, valor, origem, trecho, pagina, confianca,"
-                " pendencia, versao, usuario, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    linha_id,
-                    valor.coluna,
-                    valor.valor,
-                    str(valor.origem),
-                    valor.trecho,
-                    valor.pagina,
-                    valor.confianca,
-                    valor.pendencia,
-                    versao,
-                    usuario,
-                    _agora(),
-                ),
-            )
-        return versao
+    def registrar_correcao(self, linha_id: int, valores: list[ValorCampo], usuario: str) -> None:
+        """Grava cada valor como nova versão e desfaz a aprovação da linha, numa transação só.
 
-    def registrar_aprovacao(self, linha_id: int, usuario: str) -> None:
+        As versões anteriores continuam no histórico.
+        """
+        agora = _agora()
         with self._conexao:
-            self._conexao.execute(
-                "UPDATE linha SET aprovada_por = ?, aprovada_em = ? WHERE id = ?", (usuario, _agora(), linha_id)
-            )
-
-    def cancelar_aprovacao(self, linha_id: int) -> None:
-        with self._conexao:
+            for valor in valores:
+                versao = self._conexao.execute(
+                    "SELECT COALESCE(MAX(versao), 0) + 1 FROM valor_campo WHERE linha_id = ? AND coluna = ?",
+                    (linha_id, valor.coluna),
+                ).fetchone()[0]
+                self._conexao.execute(
+                    "INSERT INTO valor_campo (linha_id, coluna, valor, origem, trecho, pagina, confianca,"
+                    " pendencia, versao, usuario, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        linha_id,
+                        valor.coluna,
+                        valor.valor,
+                        str(valor.origem),
+                        valor.trecho,
+                        valor.pagina,
+                        valor.confianca,
+                        valor.pendencia,
+                        versao,
+                        usuario,
+                        agora,
+                    ),
+                )
             self._conexao.execute(
                 "UPDATE linha SET aprovada_por = NULL, aprovada_em = NULL WHERE id = ?", (linha_id,)
+            )
+
+    def registrar_aprovacao(self, linha_ids: list[int], usuario: str) -> None:
+        agora = _agora()
+        with self._conexao:
+            self._conexao.executemany(
+                "UPDATE linha SET aprovada_por = ?, aprovada_em = ? WHERE id = ?",
+                [(usuario, agora, linha_id) for linha_id in linha_ids],
             )
 
     def versoes_do_valor(self, linha_id: int, coluna: str) -> list[VersaoValor]:

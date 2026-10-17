@@ -52,6 +52,7 @@ class JanelaPrincipal(QMainWindow):
         self._usuario = usuario or usuario_atual()
         self._arquivos: list[Path] = []
         self._lote: ResultadoProcessamento | None = None
+        self._exportadas: set[int] = set()  # linhas aprovadas que já estão numa planilha gravada
         self._colunas = processador.colunas
         self._atualizando = False
         self.setWindowTitle("Automatizador")
@@ -123,11 +124,12 @@ class JanelaPrincipal(QMainWindow):
 
     def ler(self) -> ResultadoProcessamento:
         # Por enquanto roda na própria janela; com documentos maiores passa para segundo plano.
-        self._lote = self._processador.ler(self._arquivos)
-        self.detalhe.setText(TEXTO_DETALHE_INICIAL)
-        self.imagem.clear()
+        self.tabela.setCurrentCell(-1, -1)  # grava uma célula em edição e esquece a célula do lote anterior
         self.tabela.clearSelection()
+        self._lote = self._processador.ler(self._arquivos)
+        self._exportadas = set()
         self._mostrar_tudo()
+        self._limpar_painel()
         tem_linhas = bool(self._lote.linhas)
         self.botao_aprovar.setEnabled(tem_linhas)
         self.botao_aprovar_todas.setEnabled(tem_linhas)
@@ -149,11 +151,15 @@ class JanelaPrincipal(QMainWindow):
         if novos_erros:
             self.statusBar().showMessage("; ".join(e.mensagem for e in novos_erros))
         else:
+            self._exportadas.update(linha.id for _, linha in self._lote.aprovadas)
             self.statusBar().showMessage(f"{len(self._lote.aprovadas)} linha(s) gravada(s) em {destino}")
         return self._lote
 
     def mostrar_detalhe(self, indice_linha: int, indice_coluna: int) -> None:
-        if not self._lote or indice_linha < 0 or indice_coluna < len(COLUNAS_FIXAS):
+        if not self._lote or indice_linha < 0:
+            return
+        if indice_coluna < len(COLUNAS_FIXAS):
+            self._limpar_painel()  # não deixa o trecho de outra célula (talvez de outro documento)
             return
         _, linha = self._lote.linhas[indice_linha]
         coluna = self._colunas[indice_coluna - len(COLUNAS_FIXAS)]
@@ -171,6 +177,7 @@ class JanelaPrincipal(QMainWindow):
         self._mostrar_pagina(self._lote.caminho_da_linha(linha), valor.pagina or 1, destaques)
 
     def closeEvent(self, evento) -> None:
+        self.tabela.setCurrentCell(-1, -1)  # uma célula ainda em edição é gravada antes de fechar o banco
         self._processador.fechar()
         super().closeEvent(evento)
 
@@ -179,10 +186,14 @@ class JanelaPrincipal(QMainWindow):
     def _aprovar(self, indices: list[int]) -> None:
         if not self._lote or not indices:
             return
-        self._processador.aprovar([self._lote.linhas[i][1] for i in indices], self._usuario)
-        for indice in indices:
-            self._mostrar_linha(indice)
-        self._atualizar_status()
+        try:
+            self._processador.aprovar([self._lote.linhas[i][1] for i in indices], self._usuario)
+        except Exception as erro:
+            QMessageBox.critical(self, "Aprovação não gravada", f"A aprovação não foi gravada: {erro}")
+        finally:
+            for indice in indices:
+                self._mostrar_linha(indice)
+            self._atualizar_status()
 
     def _ao_editar(self, item: QTableWidgetItem) -> None:
         if self._atualizando or not self._lote or item.column() < len(COLUNAS_FIXAS):
@@ -197,6 +208,8 @@ class JanelaPrincipal(QMainWindow):
             self._processador.corrigir(linha, coluna, texto, self._usuario)
         except Exception as erro:
             QMessageBox.critical(self, "Correção não gravada", f"A correção não foi gravada: {erro}")
+        else:
+            self._exportadas.discard(linha.id)
         self._mostrar_linha(indice_linha)
         self._atualizar_status()
         self.mostrar_detalhe(indice_linha, indice_coluna)
@@ -241,6 +254,10 @@ class JanelaPrincipal(QMainWindow):
         item.setBackground(fundo)
         item.setToolTip(_dica(dica))
 
+    def _limpar_painel(self) -> None:
+        self.detalhe.setText(TEXTO_DETALHE_INICIAL)
+        self.imagem.clear()
+
     def _atualizar_status(self) -> None:
         total = len(self._lote.linhas)
         aprovadas = len(self._lote.aprovadas)
@@ -271,7 +288,7 @@ class JanelaPrincipal(QMainWindow):
             self.definir_arquivos([Path(a) for a in arquivos])
 
     def _ler_com_avisos(self) -> None:
-        if self._lote and self._lote.aprovadas and self._lote.destino is None:
+        if self._lote and any(linha.id not in self._exportadas for _, linha in self._lote.aprovadas):
             resposta = QMessageBox.question(
                 self,
                 "Ler de novo?",

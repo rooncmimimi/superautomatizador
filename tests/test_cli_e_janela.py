@@ -212,3 +212,124 @@ def test_reler_pede_confirmacao_quando_ha_linhas_aprovadas_nao_exportadas(qtbot,
 
     assert perguntas
     assert janela._lote is lote
+
+
+def test_reler_depois_de_exportar_pede_confirmacao_se_ha_aprovada_nao_exportada(
+    qtbot, tmp_path, cte_ficticio, nfse_ficticia, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    janela = _janela(qtbot, tmp_path)
+    janela.definir_arquivos([cte_ficticio.pdf, nfse_ficticia.pdf])
+    janela.ler()
+    janela.tabela.setCurrentCell(0, _coluna(janela, "CT-e"))
+    janela.aprovar_selecionadas()
+    janela.exportar(tmp_path / "primeira.xlsx")
+    perguntas = []
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *args, **kw: perguntas.append(args[2]) or QMessageBox.StandardButton.No
+    )
+
+    janela.tabela.setCurrentCell(1, _coluna(janela, "CT-e"))
+    janela.aprovar_selecionadas()
+
+    janela.botao_ler.click()
+    assert len(perguntas) == 1
+
+    janela.exportar(tmp_path / "segunda.xlsx")
+    janela.botao_ler.click()  # tudo o que foi aprovado já foi exportado: não pergunta
+    assert len(perguntas) == 1
+
+
+def test_corrigir_linha_ja_exportada_e_aprovar_de_novo_pede_confirmacao_ao_reler(
+    qtbot, tmp_path, cte_ficticio, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    janela = _janela(qtbot, tmp_path)
+    janela.definir_arquivos([cte_ficticio.pdf])
+    janela.ler()
+    janela.aprovar_todas()
+    janela.exportar(tmp_path / "primeira.xlsx")
+    janela.tabela.item(0, _coluna(janela, "FORNECEDOR")).setText("Outro")
+    janela.aprovar_todas()
+    perguntas = []
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *args, **kw: perguntas.append(args[2]) or QMessageBox.StandardButton.No
+    )
+
+    janela.botao_ler.click()
+
+    assert len(perguntas) == 1
+
+
+def test_aprovacao_que_falha_avisa_e_a_tabela_mostra_o_que_ficou_gravado(qtbot, tmp_path, cte_ficticio, monkeypatch):
+    import sqlite3
+
+    from PySide6.QtWidgets import QMessageBox
+
+    janela = _janela(qtbot, tmp_path)
+    janela.definir_arquivos([cte_ficticio.pdf])
+    janela.ler()
+    avisos = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *args: avisos.append(args[2]))
+
+    def aprova_e_falha(linhas, usuario):
+        for linha in linhas:
+            linha.aprovada = True  # o que a tabela mostra tem de seguir o estado da linha
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(janela._processador, "aprovar", aprova_e_falha)
+    janela.aprovar_todas()
+
+    assert "database is locked" in avisos[0]
+    assert janela.tabela.item(0, _coluna(janela, "APROVADA")).text() == "✔"
+    assert "1 aprovada(s)" in janela.statusBar().currentMessage()
+
+
+def test_fechar_com_celula_em_edicao_grava_a_correcao_antes(qtbot, tmp_path, cte_ficticio):
+    from PySide6.QtWidgets import QLineEdit
+
+    from automatizador.adaptadores.repositorio_sqlite import RepositorioSqlite
+
+    janela = _janela(qtbot, tmp_path)
+    janela.show()
+    janela.definir_arquivos([cte_ficticio.pdf])
+    lote = janela.ler()
+    item = janela.tabela.item(0, _coluna(janela, "FORNECEDOR"))
+    janela.tabela.setCurrentItem(item)
+    janela.tabela.editItem(item)
+    editor = janela.tabela.findChild(QLineEdit)
+    editor.setText("Fornecedor Corrigido")
+
+    janela.close()
+
+    repositorio = RepositorioSqlite(tmp_path / "a.db")
+    versoes = repositorio.versoes_do_valor(lote.linhas[0][1].id, "FORNECEDOR")
+    repositorio.fechar()
+    assert versoes[-1].valor == "Fornecedor Corrigido"
+
+
+def test_ler_outro_lote_tira_a_celula_atual(qtbot, tmp_path, cte_ficticio):
+    janela = _janela(qtbot, tmp_path)
+    janela.definir_arquivos([cte_ficticio.pdf])
+    janela.ler()
+    janela.tabela.setCurrentCell(0, _coluna(janela, "VALOR TOTAL"))
+
+    janela.ler()
+
+    assert janela.tabela.currentRow() == -1
+
+
+def test_coluna_documento_nao_mostra_o_trecho_de_outra_celula(qtbot, tmp_path, cte_ficticio, nfse_ficticia):
+    from automatizador.adaptadores.imagem_pagina import renderizar_pagina
+
+    janela = _janela(qtbot, tmp_path, renderizador=renderizar_pagina)
+    janela.definir_arquivos([cte_ficticio.pdf, nfse_ficticia.pdf])
+    janela.ler()
+    janela.mostrar_detalhe(0, _coluna(janela, "VALOR TOTAL"))
+
+    janela.mostrar_detalhe(1, _coluna(janela, "DOCUMENTO"))
+
+    assert "Trecho" not in janela.detalhe.text()
+    assert janela.imagem.pixmap().isNull()

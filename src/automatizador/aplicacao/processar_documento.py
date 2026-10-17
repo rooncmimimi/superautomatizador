@@ -121,7 +121,8 @@ class ProcessarDocumentos:
         """Troca um valor pelo informado pelo usuário, registrando nova versão com usuário e data.
 
         A linha volta a precisar de aprovação, e as validações rodam de novo sobre o valor corrigido.
-        A linha só muda depois de a correção ficar gravada no histórico.
+        Se a correção muda a pendência de outra coluna (ex.: vencimento antes da nota), essa coluna
+        também ganha nova versão. A linha só muda depois de tudo ficar gravado no histórico.
         """
         novo_valor = (novo_valor or "").strip() or None
         valor = ValorCampo(
@@ -130,18 +131,20 @@ class ProcessarDocumentos:
         corrigida = replace(linha, valores={c: replace(v) for c, v in linha.valores.items()})
         corrigida.valores[coluna] = valor
         validar_linha(corrigida, linha.problemas_documento)
+        alterados = [
+            v for c, v in corrigida.valores.items() if c == coluna or v.pendencia != linha.valores[c].pendencia
+        ]
 
-        self._repositorio.registrar_correcao(linha.id, valor, usuario)
-        if linha.aprovada:
-            self._repositorio.cancelar_aprovacao(linha.id)
+        self._repositorio.registrar_correcao(linha.id, alterados, usuario)
         linha.valores = corrigida.valores
         linha.pendencias = corrigida.pendencias
         linha.aprovada = False
         return valor
 
     def aprovar(self, linhas: list[Linha], usuario: str) -> None:
+        """Aprova todas as linhas ou nenhuma."""
+        self._repositorio.registrar_aprovacao([linha.id for linha in linhas], usuario)
         for linha in linhas:
-            self._repositorio.registrar_aprovacao(linha.id, usuario)
             linha.aprovada = True
 
     def exportar(self, lote: ResultadoProcessamento, destino: Path, substituir: bool = False) -> ResultadoProcessamento:

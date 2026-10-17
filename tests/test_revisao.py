@@ -171,3 +171,60 @@ def test_documento_com_erro_fica_registrado_na_execucao_em_revisao(tmp_path, cte
 
     execucao = repositorio.execucoes()[-1]
     assert (execucao.resultado, execucao.erro) == ("aguardando_revisao", "1 erro(s)")
+
+
+def test_pendencia_que_muda_por_causa_da_correcao_fica_no_historico(tmp_path, cte_ficticio):
+    caso, repositorio = _caso(tmp_path, cte_ficticio.pdf.parent)
+    lote = caso.ler([cte_ficticio.pdf])
+    linha = lote.linhas[0][1]
+
+    caso.corrigir(linha, "DATA DA NOTA", "10/11/2026", "ana")
+
+    atual = next(
+        v for v in repositorio.valores_do_documento(lote.documentos[0].id) if v.coluna == "DATA DO VENCIMENTO"
+    )
+    assert (atual.valor, atual.pendencia) == ("02/11/2026", "vencimento anterior à data da nota")
+    versoes = repositorio.versoes_do_valor(linha.id, "DATA DO VENCIMENTO")
+    assert [(v.versao, v.valor, v.usuario) for v in versoes] == [(1, "02/11/2026", None), (2, "02/11/2026", "ana")]
+
+
+def test_correcao_e_cancelamento_da_aprovacao_sao_gravados_juntos(tmp_path, cte_ficticio):
+    caso, repositorio = _caso(tmp_path, cte_ficticio.pdf.parent)
+    linha = caso.ler([cte_ficticio.pdf]).linhas[0][1]
+    caso.aprovar([linha], "ana")
+    outra_conexao = sqlite3.connect(tmp_path / "a.db")
+    outra_conexao.execute(
+        "CREATE TRIGGER falha BEFORE UPDATE OF aprovada_por ON linha BEGIN SELECT RAISE(ABORT, 'falha'); END"
+    )
+    outra_conexao.commit()
+    outra_conexao.close()
+
+    try:
+        caso.corrigir(linha, "FORNECEDOR", "Outro", "bia")
+    except sqlite3.DatabaseError:
+        pass
+
+    assert len(repositorio.versoes_do_valor(linha.id, "FORNECEDOR")) == 1
+    assert repositorio.aprovacao_da_linha(linha.id)[0] == "ana"
+    assert linha.aprovada and linha.valores["FORNECEDOR"].valor == "Transportadora Exemplo Ltda"
+
+
+def test_aprovar_varias_linhas_grava_todas_ou_nenhuma(tmp_path, cte_ficticio, nfse_ficticia):
+    caso, repositorio = _caso(tmp_path, cte_ficticio.pdf.parent)
+    lote = caso.ler([cte_ficticio.pdf, nfse_ficticia.pdf])
+    cte, nfse = (linha for _, linha in lote.linhas)
+    outra_conexao = sqlite3.connect(tmp_path / "a.db")
+    outra_conexao.execute(
+        f"CREATE TRIGGER falha BEFORE UPDATE OF aprovada_por ON linha WHEN OLD.id = {nfse.id}"
+        " BEGIN SELECT RAISE(ABORT, 'falha'); END"
+    )
+    outra_conexao.commit()
+    outra_conexao.close()
+
+    try:
+        caso.aprovar([cte, nfse], "ana")
+    except sqlite3.DatabaseError:
+        pass
+
+    assert not cte.aprovada and not nfse.aprovada
+    assert repositorio.aprovacao_da_linha(cte.id) == (None, None)
