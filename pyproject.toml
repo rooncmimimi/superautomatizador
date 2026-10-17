@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automatizador"
+version = "0.1.0"
+description = "Automatizador de processos administrativos: leitura de documentos fiscais e preenchimento de planilhas."
+requires-python = ">=3.12"
+dependencies = [
+    "pdfplumber>=0.11",
+    "openpyxl>=3.1",
+    "pydantic>=2.7",
+    "reportlab>=4.2",
+    "PySide6>=6.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-qt>=4.4"]
+
+[project.scripts]
+automatizador = "automatizador.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyside6"
