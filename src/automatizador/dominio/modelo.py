@@ -119,7 +119,7 @@ def conferir_campo(coluna: str, sugerido: CampoSugerido | None, conteudo: Conteu
 # Marca no texto do documento -> como o tipo é escrito na planilha de controle.
 TIPOS_DE_NOTA = [
     ("Conhecimento de Transporte", "CT-e"),
-    ("NFS-e", "Nota fiscal"),
+    ("NFS-e", "Nota Fiscal"),
 ]
 
 

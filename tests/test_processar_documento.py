@@ -282,5 +282,5 @@ def test_tipo_de_nota_vem_de_regra_e_nao_da_ia(tmp_path, cte_ficticio, nfse_fict
 
     tipos = {nome: linha.valores["TIPO DE NOTA"] for nome, linha in resultado.linhas}
     assert tipos["cte_1234.pdf"].valor == "CT-e"
-    assert tipos["nfse_5501.pdf"].valor == "Nota fiscal"
+    assert tipos["nfse_5501.pdf"].valor == "Nota Fiscal"
     assert {str(v.origem) for v in tipos.values()} == {"derivado_regra"}

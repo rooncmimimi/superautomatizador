@@ -136,7 +136,7 @@ def gerar_nfse_ficticia(pasta: Path, numero: int = 5501) -> DocumentoFicticio:
         "DATA DA NOTA": ("17/09/2026", f"{rotulo_numero} {valores_numero}"),
         "DATA DO VENCIMENTO": ("15/01/2027", linha_pedido),
     }
-    return _gravar(Path(pasta), f"nfse_{numero}", linhas_pdf, campos, tipo_de_nota="Nota fiscal")
+    return _gravar(Path(pasta), f"nfse_{numero}", linhas_pdf, campos, tipo_de_nota="Nota Fiscal")
 
 
 def _gravar(

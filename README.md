@@ -62,7 +62,7 @@ Regras de preenchimento já definidas:
 
 | Coluna | Regra |
 | --- | --- |
-| TIPO DE NOTA | Derivada do tipo de documento, não da IA: CT-e → `CT-e`; NFS-e → `Nota fiscal` |
+| TIPO DE NOTA | Derivada do tipo de documento, não da IA: CT-e → `CT-e`; NFS-e → `Nota Fiscal` |
 | VALOR TOTAL | Valor do serviço/prestação, antes das retenções (não o valor líquido) |
 | PEDIDO, DATA DO VENCIMENTO | Na NFS-e costumam vir no texto livre da descrição do serviço |
 | CÓDIGO FORNECEDOR, CONTA RAZÃO, CENTRO DE CUSTO / PEP | Não estão no documento; hoje são consultados no SAP (ME23N, pelo pedido). Ficam pendentes para preenchimento manual |
