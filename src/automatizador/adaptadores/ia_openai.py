@@ -27,7 +27,9 @@ Regras:
   "trecho" com a frase do documento que contém o valor (copiada sem alterar nada),
   "pagina" (número da página, começando em 1) e "confianca" (0 a 1).
 - Se a informação não estiver escrita no documento, use valor, trecho e pagina nulos. Nunca invente nem deduza.
-- VALOR TOTAL é o valor do serviço ou da prestação, antes das retenções (não o valor líquido).
+- VALOR TOTAL é o valor do serviço ou da prestação, antes das retenções (não o valor líquido),
+  só com números no formato 1.234,56 (sem "R$").
+- Datas no formato dd/mm/aaaa; CT-e (número do documento) e PEDIDO só com dígitos.
 - Responda somente com JSON neste formato:
 {"linhas": [{"campos": {"<coluna>": {"valor": "...", "trecho": "...", "pagina": 1, "confianca": 0.9}}}]}"""
 

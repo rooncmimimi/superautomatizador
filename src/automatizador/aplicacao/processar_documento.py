@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from automatizador.aplicacao.portas import (
@@ -22,6 +22,7 @@ from automatizador.dominio.modelo import (
     conferir_campo,
     derivar_tipo_de_nota,
 )
+from automatizador.dominio.validacoes import validar_documento, validar_linha
 
 COLUNA_TIPO_DE_NOTA = "TIPO DE NOTA"
 
@@ -29,15 +30,17 @@ COLUNA_TIPO_DE_NOTA = "TIPO DE NOTA"
 def montar_linhas(
     sugestoes: list[dict[str, CampoSugerido]], conteudo: ConteudoDocumento, colunas: list[str]
 ) -> list[Linha]:
-    """Confere cada sugestão da IA contra o documento e aplica as regras (TIPO DE NOTA)."""
+    """Confere cada sugestão da IA contra o documento, aplica as regras (TIPO DE NOTA) e valida."""
     tipo_de_nota = derivar_tipo_de_nota(COLUNA_TIPO_DE_NOTA, conteudo)
+    problemas_do_documento = validar_documento(conteudo)
     linhas = []
     for ordem, sugestao in enumerate(sugestoes, start=1):
         linha = Linha(ordem)
         for coluna in colunas:
             linha.valores[coluna] = conferir_campo(coluna, sugestao.get(coluna), conteudo)
         if tipo_de_nota and COLUNA_TIPO_DE_NOTA in linha.valores:
-            linha.valores[COLUNA_TIPO_DE_NOTA] = tipo_de_nota
+            linha.valores[COLUNA_TIPO_DE_NOTA] = replace(tipo_de_nota)
+        validar_linha(linha, problemas_do_documento)
         linhas.append(linha)
     return linhas
 
