@@ -14,7 +14,9 @@ from automatizador.aplicacao.portas import (
     RespostaInvalida,
 )
 from automatizador.dominio.colunas import COLUNAS_CONTROLE
-from automatizador.dominio.modelo import Linha, conferir_campo
+from automatizador.dominio.modelo import Linha, conferir_campo, derivar_tipo_de_nota
+
+COLUNA_TIPO_DE_NOTA = "TIPO DE NOTA"
 
 
 @dataclass
@@ -105,11 +107,14 @@ class ProcessarDocumentos:
         if not sugestoes:
             raise RespostaInvalida("a IA não devolveu nenhuma linha para o documento")
 
+        tipo_de_nota = derivar_tipo_de_nota(COLUNA_TIPO_DE_NOTA, conteudo)
         linhas = []
         for ordem, sugestao in enumerate(sugestoes, start=1):
             linha = Linha(ordem)
             for coluna in self._colunas:
                 linha.valores[coluna] = conferir_campo(coluna, sugestao.get(coluna), conteudo)
+            if tipo_de_nota and COLUNA_TIPO_DE_NOTA in linha.valores:
+                linha.valores[COLUNA_TIPO_DE_NOTA] = tipo_de_nota
             linhas.append(linha)
 
         documento = self._repositorio.registrar_documento(execucao, conteudo, linhas)

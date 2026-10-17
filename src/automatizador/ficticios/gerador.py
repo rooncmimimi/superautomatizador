@@ -1,8 +1,10 @@
-"""Gera DACTE (PDF de CT-e) fictícios com texto digital, o gabarito e a resposta simulada da IA.
+"""Gera CT-e e NFS-e fictícios em PDF com texto digital, o gabarito e a resposta simulada da IA.
 
-Para cada documento `cte_<numero>.pdf` são criados:
-- `cte_<numero>.gabarito.json`: os valores esperados na planilha, escritos a partir dos dados do gerador;
-- `cte_<numero>.resposta.json`: a resposta que uma IA perfeita daria, usada pela IA simulada.
+Para cada documento `<nome>.pdf` são criados:
+- `<nome>.gabarito.json`: os valores esperados na planilha, escritos a partir dos dados do gerador;
+- `<nome>.resposta.json`: a resposta que uma IA perfeita daria, usada pela IA simulada.
+
+TIPO DE NOTA não entra na resposta da IA: é derivado por regra a partir do tipo de documento.
 """
 
 from __future__ import annotations
@@ -56,8 +58,6 @@ def chave_acesso_cte(cnpj: str, numero: int, ano_mes: str, uf: str = "35", serie
 
 
 def gerar_cte_ficticio(pasta: Path, numero: int = 1234) -> DocumentoFicticio:
-    pasta = Path(pasta)
-    pasta.mkdir(parents=True, exist_ok=True)
     cnpj = cnpj_ficticio("12345678")
     chave = chave_acesso_cte(cnpj, numero, "2610")
     chave_formatada = " ".join(chave[i : i + 4] for i in range(0, 44, 4))
@@ -81,8 +81,70 @@ def gerar_cte_ficticio(pasta: Path, numero: int = 1234) -> DocumentoFicticio:
         linha_valor,
         linha_vencimento,
     ]
+    campos = {
+        "CT-e": (str(numero), linha_numero),
+        "FORNECEDOR": ("Transportadora Exemplo Ltda", linha_emitente),
+        "DESCRIÇÃO": ("Frete de botijões P13 - Rota Campinas/Sorocaba", linha_descricao),
+        "VALOR TOTAL": ("1.850,40", linha_valor),
+        "DATA DA NOTA": ("03/10/2026", linha_emissao),
+        "DATA DO VENCIMENTO": ("02/11/2026", linha_vencimento),
+    }
+    return _gravar(Path(pasta), f"cte_{numero}", linhas_pdf, campos, tipo_de_nota="CT-e")
 
-    pdf = pasta / f"cte_{numero}.pdf"
+
+def gerar_nfse_ficticia(pasta: Path, numero: int = 5501) -> DocumentoFicticio:
+    """NFS-e no leiaute do DANFSe nacional: rótulos numa linha e valores na linha de baixo.
+
+    Pedido e vencimento vêm dentro do texto livre da descrição do serviço, como nas notas reais.
+    VALOR TOTAL é o valor do serviço (antes das retenções), não o valor líquido.
+    """
+    cnpj = cnpj_ficticio("23456789")
+    rotulo_numero = "NÚMERO DA NFS-E COMPETÊNCIA DA NFS-E DATA E HORA DA EMISSÃO DA NFS-E"
+    valores_numero = f"{numero} 09/2026 17/09/2026 09:47:20"
+    rotulo_nome = "NOME / NOME EMPRESARIAL MUNICÍPIO / SIGLA UF"
+    valores_nome = "REQUALIFICADORA EXEMPLO LTDA CIDADE FICTICIA/SP"
+    descricao = "Requalificação de Recipiente P-45 - Qtde 12 x Valor Unit. R$ 95,00 = Total R$ 1.140,00."
+    linha_pedido = "Pedido: 4500012345 10 Vencimento: 15/01/2027"
+    rotulo_valor = "VALOR DA OPERAÇÃO / SERVIÇO DESCONTO CONDICIONADO DESCONTO INCONDICIONADO"
+    valores_valor = "1.140,00 0,00 0,00"
+    linhas_pdf = [
+        "DANFSe v2.0 - Documento Auxiliar da NFS-e",
+        "DOCUMENTO FICTÍCIO - SEM VALOR FISCAL",
+        rotulo_numero,
+        valores_numero,
+        "PRESTADOR",
+        f"CNPJ: {cnpj}",
+        rotulo_nome,
+        valores_nome,
+        "TOMADOR / ADQUIRENTE",
+        "EMPRESA FICTÍCIA DE GÁS S.A.",
+        "DESCRIÇÃO DO SERVIÇO",
+        descricao,
+        linha_pedido,
+        "VALOR TOTAL DA NFS-E",
+        rotulo_valor,
+        valores_valor,
+        "TOTAL DAS RETENÇÕES (ISSQN / FEDERAIS) VALOR LÍQUIDO DA NFS-E",
+        "53,01 1.086,99",
+    ]
+    campos = {
+        "CT-e": (str(numero), f"{rotulo_numero} {valores_numero}"),
+        "FORNECEDOR": ("REQUALIFICADORA EXEMPLO LTDA", f"{rotulo_nome} {valores_nome}"),
+        "DESCRIÇÃO": (descricao, descricao),
+        "VALOR TOTAL": ("1.140,00", f"{rotulo_valor} {valores_valor}"),
+        "PEDIDO": ("4500012345", linha_pedido),
+        "DATA DA NOTA": ("17/09/2026", f"{rotulo_numero} {valores_numero}"),
+        "DATA DO VENCIMENTO": ("15/01/2027", linha_pedido),
+    }
+    return _gravar(Path(pasta), f"nfse_{numero}", linhas_pdf, campos, tipo_de_nota="Nota fiscal")
+
+
+def _gravar(
+    pasta: Path, nome: str, linhas_pdf: list[str], campos: dict[str, tuple[str, str]], tipo_de_nota: str
+) -> DocumentoFicticio:
+    """Grava o PDF, o gabarito e a resposta simulada. `campos`: coluna -> (valor, trecho que o comprova)."""
+    pasta.mkdir(parents=True, exist_ok=True)
+    pdf = pasta / f"{nome}.pdf"
     folha = canvas.Canvas(str(pdf), pagesize=A4)
     y = A4[1] - 60
     for texto in linhas_pdf:
@@ -91,18 +153,8 @@ def gerar_cte_ficticio(pasta: Path, numero: int = 1234) -> DocumentoFicticio:
     folha.showPage()
     folha.save()
 
-    # Cada campo: (valor esperado, linha do documento que o comprova)
-    campos = {
-        "CT-e": (str(numero), linha_numero),
-        "TIPO DE NOTA": ("CT-e", linha_numero),
-        "FORNECEDOR": ("Transportadora Exemplo Ltda", linha_emitente),
-        "DESCRIÇÃO": ("Frete de botijões P13 - Rota Campinas/Sorocaba", linha_descricao),
-        "VALOR TOTAL": ("1.850,40", linha_valor),
-        "DATA DA NOTA": ("03/10/2026", linha_emissao),
-        "DATA DO VENCIMENTO": ("02/11/2026", linha_vencimento),
-    }
-
-    gabarito = {"linhas": [{coluna: campos[coluna][0] if coluna in campos else None for coluna in COLUNAS_CONTROLE}]}
+    esperados = {coluna: valor for coluna, (valor, _) in campos.items()} | {"TIPO DE NOTA": tipo_de_nota}
+    gabarito = {"linhas": [{coluna: esperados.get(coluna) for coluna in COLUNAS_CONTROLE}]}
     resposta = {
         "linhas": [
             {
@@ -118,8 +170,8 @@ def gerar_cte_ficticio(pasta: Path, numero: int = 1234) -> DocumentoFicticio:
         ]
     }
 
-    arquivo_gabarito = pasta / f"cte_{numero}{SUFIXO_GABARITO}"
-    arquivo_resposta = pasta / f"cte_{numero}{SUFIXO_RESPOSTA}"
+    arquivo_gabarito = pasta / f"{nome}{SUFIXO_GABARITO}"
+    arquivo_resposta = pasta / f"{nome}{SUFIXO_RESPOSTA}"
     arquivo_gabarito.write_text(json.dumps(gabarito, ensure_ascii=False, indent=2), encoding="utf-8")
     arquivo_resposta.write_text(json.dumps(resposta, ensure_ascii=False, indent=2), encoding="utf-8")
     return DocumentoFicticio(pdf, arquivo_gabarito, arquivo_resposta)

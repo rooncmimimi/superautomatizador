@@ -69,7 +69,7 @@ def test_cada_valor_tem_origem_e_evidencia_no_banco(tmp_path, cte_ficticio):
     resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx")
 
     valores = repositorio.valores_do_documento(resultado.documentos[0].id)
-    preenchidos = [v for v in valores if v.valor is not None]
+    preenchidos = [v for v in valores if v.valor is not None and v.coluna != "TIPO DE NOTA"]
     assert preenchidos
     for valor in preenchidos:
         assert valor.origem == "sugerido_ia"
@@ -252,3 +252,35 @@ def test_erro_inesperado_fica_registrado_no_historico(tmp_path, cte_ficticio):
     ultima = repositorio.execucoes()[-1]
     assert ultima.resultado == "falhou"
     assert ultima.fim is not None
+
+
+def test_nfse_ficticia_confere_com_o_gabarito(tmp_path, nfse_ficticia):
+    caso, _ = _caso_de_uso(tmp_path, nfse_ficticia.pdf.parent)
+    saida = tmp_path / "saida.xlsx"
+
+    caso.executar([nfse_ficticia.pdf], saida)
+
+    gabarito = json.loads(nfse_ficticia.gabarito.read_text(encoding="utf-8"))["linhas"][0]
+    cabecalho, linhas = _linhas_da_planilha(saida)
+    obtida = dict(zip(cabecalho, linhas[0]))
+    for coluna in COLUNAS_CONTROLE:
+        assert obtida[coluna] == gabarito.get(coluna), coluna
+    assert obtida["VALOR TOTAL"] == "1.140,00"  # valor do serviço, não o líquido
+    assert obtida["PEDIDO"] == "4500012345"
+
+
+def test_tipo_de_nota_vem_de_regra_e_nao_da_ia(tmp_path, cte_ficticio, nfse_ficticia):
+    def alterar(resposta):
+        resposta["linhas"][0]["campos"]["TIPO DE NOTA"] = {
+            "valor": "CT-e", "trecho": "DOCUMENTO FICTÍCIO", "pagina": 1, "confianca": 0.9
+        }
+
+    _alterar_resposta(nfse_ficticia, alterar)
+    caso, repositorio = _caso_de_uso(tmp_path, nfse_ficticia.pdf.parent)
+
+    resultado = caso.executar([cte_ficticio.pdf, nfse_ficticia.pdf], tmp_path / "saida.xlsx")
+
+    tipos = {nome: linha.valores["TIPO DE NOTA"] for nome, linha in resultado.linhas}
+    assert tipos["cte_1234.pdf"].valor == "CT-e"
+    assert tipos["nfse_5501.pdf"].valor == "Nota fiscal"
+    assert {str(v.origem) for v in tipos.values()} == {"derivado_regra"}

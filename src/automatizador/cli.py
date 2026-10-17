@@ -12,13 +12,16 @@ import sys
 from pathlib import Path
 
 from automatizador.configuracao import criar_processador
-from automatizador.ficticios.gerador import gerar_cte_ficticio
+from automatizador.ficticios.gerador import gerar_cte_ficticio, gerar_nfse_ficticia
 
 
 def _gerar(args) -> int:
     for i in range(args.quantidade):
-        documento = gerar_cte_ficticio(args.pasta, numero=1234 + i)
-        print(f"gerado: {documento.pdf}")
+        for documento in (
+            gerar_cte_ficticio(args.pasta, numero=1234 + i),
+            gerar_nfse_ficticia(args.pasta, numero=5501 + i),
+        ):
+            print(f"gerado: {documento.pdf}")
     return 0
 
 
@@ -50,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="automatizador")
     sub = parser.add_subparsers(dest="comando", required=True)
 
-    gerar = sub.add_parser("gerar-ficticios", help="gera CT-e fictícios para testes")
+    gerar = sub.add_parser("gerar-ficticios", help="gera CT-e e NFS-e fictícios para testes")
     gerar.add_argument("pasta", type=Path)
     gerar.add_argument("--quantidade", type=int, default=1)
     gerar.set_defaults(funcao=_gerar)

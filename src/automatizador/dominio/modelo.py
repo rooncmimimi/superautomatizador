@@ -114,3 +114,20 @@ def conferir_campo(coluna: str, sugerido: CampoSugerido | None, conteudo: Conteu
     elif not _valor_aparece_no_trecho(sugerido.valor, sugerido.trecho):
         valor.pendencia = PENDENCIA_VALOR_FORA_DO_TRECHO
     return valor
+
+
+# Marca no texto do documento -> como o tipo é escrito na planilha de controle.
+TIPOS_DE_NOTA = [
+    ("Conhecimento de Transporte", "CT-e"),
+    ("NFS-e", "Nota fiscal"),
+]
+
+
+def derivar_tipo_de_nota(coluna: str, conteudo: ConteudoDocumento) -> ValorCampo | None:
+    """TIPO DE NOTA vem de regra, não da IA: procura a marca do tipo de documento no texto."""
+    for pagina in conteudo.paginas:
+        texto = _normalizar(pagina.texto)
+        for marca, tipo in TIPOS_DE_NOTA:
+            if _normalizar(marca) in texto:
+                return ValorCampo(coluna, tipo, Origem.DERIVADO_REGRA, trecho=marca, pagina=pagina.numero)
+    return None
