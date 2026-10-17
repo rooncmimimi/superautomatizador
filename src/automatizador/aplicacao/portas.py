@@ -17,6 +17,10 @@ class RespostaInvalida(Exception):
     """A IA respondeu fora do contrato de extração."""
 
 
+class ErroServicoIA(Exception):
+    """O serviço de IA não pôde ser usado (rede, erro do serviço ou envio bloqueado)."""
+
+
 class LeitorDocumento(Protocol):
     def ler(self, caminho: Path) -> ConteudoDocumento: ...
 
