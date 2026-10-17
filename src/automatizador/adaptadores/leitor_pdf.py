@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 from pathlib import Path
 
 import pdfplumber
@@ -15,7 +16,7 @@ class LeitorPdf:
         caminho = Path(caminho)
         dados = caminho.read_bytes()
         try:
-            with pdfplumber.open(caminho) as pdf:
+            with pdfplumber.open(io.BytesIO(dados)) as pdf:
                 paginas = [
                     Pagina(numero=i, texto=pagina.extract_text() or "")
                     for i, pagina in enumerate(pdf.pages, start=1)

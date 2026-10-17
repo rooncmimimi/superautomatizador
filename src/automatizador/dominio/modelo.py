@@ -81,13 +81,19 @@ def _normalizar(texto: str) -> str:
     return re.sub(r"\s+", " ", texto).strip().casefold()
 
 
+def _valor_aparece_no_trecho(valor: str, trecho: str) -> bool:
+    """O valor precisa aparecer inteiro: "1,40" não conta como presente em "1.850,40"."""
+    padrao = r"(?<!\w)(?<!\d[.,/-])" + re.escape(_normalizar(valor)) + r"(?!\w)(?![.,/-]\d)"
+    return re.search(padrao, _normalizar(trecho)) is not None
+
+
 def conferir_campo(coluna: str, sugerido: CampoSugerido | None, conteudo: ConteudoDocumento) -> ValorCampo:
     """Transforma uma sugestão da IA em valor de campo, conferindo a evidência no documento.
 
     Um valor só fica sem pendência quando o trecho citado existe na página indicada
     e o próprio valor aparece dentro desse trecho.
     """
-    if sugerido is None or sugerido.valor is None:
+    if sugerido is None or sugerido.valor is None or not sugerido.valor.strip():
         return ValorCampo(coluna, None, Origem.AUSENTE, pendencia=PENDENCIA_AUSENTE)
 
     valor = ValorCampo(
@@ -105,6 +111,6 @@ def conferir_campo(coluna: str, sugerido: CampoSugerido | None, conteudo: Conteu
     pagina = conteudo.pagina(sugerido.pagina)
     if pagina is None or _normalizar(sugerido.trecho) not in _normalizar(pagina.texto):
         valor.pendencia = PENDENCIA_TRECHO_NAO_ENCONTRADO
-    elif _normalizar(sugerido.valor) not in _normalizar(sugerido.trecho):
+    elif not _valor_aparece_no_trecho(sugerido.valor, sugerido.trecho):
         valor.pendencia = PENDENCIA_VALOR_FORA_DO_TRECHO
     return valor

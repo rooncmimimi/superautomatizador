@@ -1,7 +1,7 @@
 """Linha de comando.
 
     automatizador gerar-ficticios PASTA [--quantidade N]
-    automatizador processar PDF [PDF ...] --saida PLANILHA.xlsx [--banco ARQUIVO.db] [--respostas PASTA]
+    automatizador processar PDF [PDF ...] --saida PLANILHA.xlsx [--substituir] [--banco ARQUIVO.db] [--respostas PASTA]
     automatizador janela
 """
 
@@ -24,7 +24,10 @@ def _gerar(args) -> int:
 
 def _processar(args) -> int:
     processador = criar_processador(banco=args.banco, pasta_respostas=args.respostas)
-    resultado = processador.executar(args.arquivos, args.saida)
+    try:
+        resultado = processador.executar(args.arquivos, args.saida, substituir=args.substituir)
+    finally:
+        processador.fechar()
     for erro in resultado.erros:
         print(f"erro em {erro.arquivo}: {erro.mensagem}", file=sys.stderr)
     if resultado.destino is None:
@@ -57,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     processar.add_argument("--saida", type=Path, required=True)
     processar.add_argument("--banco", type=Path)
     processar.add_argument("--respostas", type=Path, help="pasta com respostas gravadas da IA simulada")
+    processar.add_argument("--substituir", action="store_true", help="substitui a planilha de saída se já existir")
     processar.set_defaults(funcao=_processar)
 
     janela = sub.add_parser("janela", help="abre a interface")

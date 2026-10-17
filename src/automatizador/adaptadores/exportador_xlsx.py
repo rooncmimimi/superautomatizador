@@ -39,7 +39,7 @@ class ExportadorXlsx:
         controle.title = "Controle"
         controle.append(colunas)
         for _, linha in linhas:
-            controle.append([linha.valores[c].valor_para_exportar for c in colunas])
+            _adicionar_como_texto(controle, [linha.valores[c].valor_para_exportar for c in colunas])
         for numero, (_, linha) in enumerate(linhas, start=2):
             for indice, coluna in enumerate(colunas, start=1):
                 if not linha.valores[coluna].confirmado:
@@ -51,14 +51,26 @@ class ExportadorXlsx:
         for documento, linha in linhas:
             for coluna in colunas:
                 v = linha.valores[coluna]
-                rastreio.append(
-                    [documento, linha.ordem, coluna, v.valor, str(v.origem), v.pagina, v.trecho, v.confianca, v.pendencia]
+                _adicionar_como_texto(
+                    rastreio,
+                    [documento, linha.ordem, coluna, v.valor, str(v.origem), v.pagina, v.trecho, v.confianca, v.pendencia],
                 )
         _formatar_como_tabela(
             rastreio, "Rastreabilidade", len(COLUNAS_RASTREABILIDADE), len(linhas) * len(colunas)
         )
 
         livro.save(destino)
+
+
+def _adicionar_como_texto(aba, valores: list) -> None:
+    """Acrescenta uma linha garantindo que nenhum texto vindo do documento vire fórmula.
+
+    Um valor como "=HIPERLINK(...)" num PDF recebido seria executado pelo Excel se gravado como fórmula.
+    """
+    aba.append(valores)
+    for celula in aba[aba.max_row]:
+        if isinstance(celula.value, str) and celula.data_type == "f":
+            celula.data_type = "s"
 
 
 def _formatar_como_tabela(aba, nome: str, total_colunas: int, total_linhas: int) -> None:

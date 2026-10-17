@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -21,7 +22,6 @@ from PySide6.QtWidgets import (
 
 from automatizador.aplicacao.processar_documento import ProcessarDocumentos, ResultadoProcessamento
 from automatizador.configuracao import criar_processador
-from automatizador.dominio.colunas import COLUNAS_CONTROLE
 
 COR_PENDENTE = QColor("#FFF2CC")
 
@@ -38,8 +38,9 @@ class JanelaPrincipal(QMainWindow):
         self.botao_processar = QPushButton("Processar e exportar…")
         self.botao_processar.setEnabled(False)
         self.rotulo_arquivos = QLabel("Nenhum arquivo selecionado")
-        self.tabela = QTableWidget(0, len(COLUNAS_CONTROLE))
-        self.tabela.setHorizontalHeaderLabels(COLUNAS_CONTROLE)
+        self._colunas = processador.colunas
+        self.tabela = QTableWidget(0, len(self._colunas))
+        self.tabela.setHorizontalHeaderLabels(self._colunas)
 
         botoes = QHBoxLayout()
         botoes.addWidget(self.botao_adicionar)
@@ -61,10 +62,15 @@ class JanelaPrincipal(QMainWindow):
         self.rotulo_arquivos.setText(f"{len(self._arquivos)} arquivo(s) selecionado(s)")
         self.botao_processar.setEnabled(bool(self._arquivos))
 
-    def processar(self, destino: Path) -> ResultadoProcessamento:
-        resultado = self._processador.executar(self._arquivos, destino)
+    def processar(self, destino: Path, substituir: bool = False) -> ResultadoProcessamento:
+        # Por enquanto roda na própria janela; com a IA real (ticket 02) passa para segundo plano.
+        resultado = self._processador.executar(self._arquivos, destino, substituir=substituir)
         self._mostrar(resultado)
         return resultado
+
+    def closeEvent(self, evento) -> None:
+        self._processador.fechar()
+        super().closeEvent(evento)
 
     def _escolher_arquivos(self) -> None:
         arquivos, _ = QFileDialog.getOpenFileNames(self, "Escolher documentos", "", "PDF (*.pdf)")
@@ -73,13 +79,22 @@ class JanelaPrincipal(QMainWindow):
 
     def _escolher_destino_e_processar(self) -> None:
         destino, _ = QFileDialog.getSaveFileName(self, "Salvar planilha", "controle.xlsx", "Excel (*.xlsx)")
-        if destino:
-            self.processar(Path(destino))
+        if not destino:
+            return
+        try:
+            # O diálogo de salvar já pediu confirmação se o arquivo existia.
+            resultado = self.processar(Path(destino), substituir=True)
+        except Exception as erro:
+            QMessageBox.critical(self, "Erro ao processar", f"O processamento falhou: {erro}")
+            return
+        if resultado.erros:
+            detalhes = "\n".join(f"{e.arquivo}: {e.mensagem}" for e in resultado.erros)
+            QMessageBox.warning(self, "Documentos com erro", detalhes)
 
     def _mostrar(self, resultado: ResultadoProcessamento) -> None:
         self.tabela.setRowCount(len(resultado.linhas))
         for numero, (_, linha) in enumerate(resultado.linhas):
-            for indice, coluna in enumerate(COLUNAS_CONTROLE):
+            for indice, coluna in enumerate(self._colunas):
                 valor = linha.valores[coluna]
                 item = QTableWidgetItem(valor.valor_para_exportar or "")
                 if not valor.confirmado:
@@ -92,7 +107,7 @@ class JanelaPrincipal(QMainWindow):
         if resultado.destino:
             mensagens.append(f"planilha salva em {resultado.destino}")
         if resultado.erros:
-            mensagens.append(f"{len(resultado.erros)} documento(s) com erro")
+            mensagens.append(f"{len(resultado.erros)} erro(s)")
         self.statusBar().showMessage("; ".join(mensagens))
 
 

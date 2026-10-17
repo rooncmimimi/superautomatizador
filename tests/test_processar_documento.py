@@ -5,6 +5,8 @@ A IA é substituída por respostas gravadas; leitor de PDF, banco e exportador s
 
 import json
 
+import pytest
+
 from openpyxl import load_workbook
 
 from automatizador.adaptadores.exportador_xlsx import ExportadorXlsx
@@ -138,3 +140,115 @@ def test_resposta_fora_do_contrato_falha_a_execucao_sem_gerar_planilha(tmp_path,
     assert resultado.erros
     assert not saida.exists()
     assert repositorio.execucoes()[-1].resultado == "falhou"
+
+
+def _alterar_resposta(cte_ficticio, alterar):
+    resposta = json.loads(cte_ficticio.resposta_simulada.read_text(encoding="utf-8"))
+    alterar(resposta)
+    cte_ficticio.resposta_simulada.write_text(json.dumps(resposta), encoding="utf-8")
+
+
+def _valor(repositorio, resultado, coluna):
+    return next(
+        v for v in repositorio.valores_do_documento(resultado.documentos[0].id) if v.coluna == coluna
+    )
+
+
+def test_valor_em_branco_conta_como_ausente(tmp_path, cte_ficticio):
+    def alterar(resposta):
+        resposta["linhas"][0]["campos"]["FORNECEDOR"]["valor"] = "   "
+
+    _alterar_resposta(cte_ficticio, alterar)
+    caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
+
+    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx")
+
+    fornecedor = _valor(repositorio, resultado, "FORNECEDOR")
+    assert fornecedor.origem == "ausente"
+    assert fornecedor.pendencia == "não encontrado no documento"
+
+
+def test_pedaco_de_um_numero_nao_conta_como_evidencia(tmp_path, cte_ficticio):
+    def alterar(resposta):
+        resposta["linhas"][0]["campos"]["VALOR TOTAL"]["valor"] = "1,40"
+
+    _alterar_resposta(cte_ficticio, alterar)
+    caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
+
+    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx")
+
+    assert _valor(repositorio, resultado, "VALOR TOTAL").pendencia == "valor não aparece no trecho citado"
+
+
+def test_nao_sobrescreve_planilha_existente(tmp_path, cte_ficticio):
+    saida = tmp_path / "saida.xlsx"
+    saida.write_bytes(b"planilha anterior")
+    caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
+
+    resultado = caso.executar([cte_ficticio.pdf], saida)
+
+    assert saida.read_bytes() == b"planilha anterior"
+    assert resultado.destino is None
+    assert resultado.erros[0].mensagem == "a planilha de destino já existe"
+    assert repositorio.execucoes()[-1].resultado == "falhou"
+
+
+def test_substitui_planilha_existente_quando_pedido(tmp_path, cte_ficticio):
+    saida = tmp_path / "saida.xlsx"
+    saida.write_bytes(b"planilha anterior")
+    caso, _ = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
+
+    resultado = caso.executar([cte_ficticio.pdf], saida, substituir=True)
+
+    assert resultado.destino == saida
+    assert len(_linhas_da_planilha(saida)[1]) == 1
+
+
+def test_ia_sem_nenhuma_linha_e_erro(tmp_path, cte_ficticio):
+    _alterar_resposta(cte_ficticio, lambda resposta: resposta.update(linhas=[]))
+    caso, repositorio = _caso_de_uso(tmp_path, cte_ficticio.pdf.parent)
+    saida = tmp_path / "saida.xlsx"
+
+    resultado = caso.executar([cte_ficticio.pdf], saida)
+
+    assert "nenhuma linha" in resultado.erros[0].mensagem
+    assert not saida.exists()
+    assert repositorio.execucoes()[-1].resultado == "falhou"
+
+
+class _ExportadorQueFalha:
+    def __init__(self, erro):
+        self.erro = erro
+
+    def exportar(self, linhas, colunas, destino):
+        raise self.erro
+
+
+def test_planilha_bloqueada_falha_a_execucao_sem_quebrar(tmp_path, cte_ficticio):
+    repositorio = RepositorioSqlite(tmp_path / "a.db")
+    caso = ProcessarDocumentos(
+        LeitorPdf(),
+        IASimulada(cte_ficticio.pdf.parent),
+        repositorio,
+        _ExportadorQueFalha(PermissionError("arquivo aberto no Excel")),
+    )
+
+    resultado = caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx")
+
+    assert resultado.destino is None
+    assert "não foi possível gravar a planilha" in resultado.erros[0].mensagem
+    assert repositorio.execucoes()[-1].resultado == "falhou"
+
+
+def test_erro_inesperado_fica_registrado_no_historico(tmp_path, cte_ficticio):
+    repositorio = RepositorioSqlite(tmp_path / "a.db")
+    caso = ProcessarDocumentos(
+        LeitorPdf(), IASimulada(cte_ficticio.pdf.parent), repositorio, _ExportadorQueFalha(RuntimeError("bug"))
+    )
+
+    with pytest.raises(RuntimeError):
+        caso.executar([cte_ficticio.pdf], tmp_path / "saida.xlsx")
+
+    ultima = repositorio.execucoes()[-1]
+    assert ultima.resultado == "falhou"
+    assert ultima.fim is not None

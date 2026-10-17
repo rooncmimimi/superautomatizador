@@ -83,9 +83,12 @@ class RepositorioSqlite:
                 (_agora(), resultado, erro, execucao_id),
             )
 
-    def registrar_documento(self, execucao_id: int, conteudo: ConteudoDocumento) -> DocumentoRegistrado:
+    def registrar_documento(
+        self, execucao_id: int, conteudo: ConteudoDocumento, linhas: list[Linha]
+    ) -> DocumentoRegistrado:
+        agora = _agora()
         with self._conexao:
-            cursor = self._conexao.execute(
+            documento_id = self._conexao.execute(
                 "INSERT INTO documento (execucao_id, nome, caminho, hash_sha256, paginas, importado_em)"
                 " VALUES (?, ?, ?, ?, ?, ?)",
                 (
@@ -94,14 +97,9 @@ class RepositorioSqlite:
                     str(conteudo.caminho),
                     conteudo.hash_sha256,
                     len(conteudo.paginas),
-                    _agora(),
+                    agora,
                 ),
-            )
-        return DocumentoRegistrado(cursor.lastrowid, conteudo.caminho.name)
-
-    def registrar_linhas(self, documento_id: int, linhas: list[Linha]) -> None:
-        agora = _agora()
-        with self._conexao:
+            ).lastrowid
             for linha in linhas:
                 linha_id = self._conexao.execute(
                     "INSERT INTO linha (documento_id, ordem) VALUES (?, ?)", (documento_id, linha.ordem)
@@ -124,6 +122,7 @@ class RepositorioSqlite:
                         for v in linha.valores.values()
                     ],
                 )
+        return DocumentoRegistrado(documento_id, conteudo.caminho.name)
 
     def registrar_exportacao(self, execucao_id: int, destino: Path, quantidade_linhas: int) -> None:
         with self._conexao:

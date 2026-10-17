@@ -30,6 +30,8 @@ automatizador gerar-ficticios exemplos
 automatizador processar exemplos\cte_1234.pdf --saida saida\controle.xlsx
 ```
 
+O aplicativo nunca sobrescreve uma planilha que já existe; use `--substituir` se for essa a intenção.
+
 Abrir a janela:
 
 ```powershell
