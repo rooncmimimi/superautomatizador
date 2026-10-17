@@ -8,15 +8,38 @@ from pathlib import Path
 from automatizador.aplicacao.portas import (
     AssistenteIA,
     DocumentoRegistrado,
+    ErroServicoIA,
     Exportador,
     LeitorDocumento,
     Repositorio,
     RespostaInvalida,
 )
 from automatizador.dominio.colunas import COLUNAS_CONTROLE
-from automatizador.dominio.modelo import Linha, conferir_campo, derivar_tipo_de_nota
+from automatizador.dominio.modelo import (
+    CampoSugerido,
+    ConteudoDocumento,
+    Linha,
+    conferir_campo,
+    derivar_tipo_de_nota,
+)
 
 COLUNA_TIPO_DE_NOTA = "TIPO DE NOTA"
+
+
+def montar_linhas(
+    sugestoes: list[dict[str, CampoSugerido]], conteudo: ConteudoDocumento, colunas: list[str]
+) -> list[Linha]:
+    """Confere cada sugestão da IA contra o documento e aplica as regras (TIPO DE NOTA)."""
+    tipo_de_nota = derivar_tipo_de_nota(COLUNA_TIPO_DE_NOTA, conteudo)
+    linhas = []
+    for ordem, sugestao in enumerate(sugestoes, start=1):
+        linha = Linha(ordem)
+        for coluna in colunas:
+            linha.valores[coluna] = conferir_campo(coluna, sugestao.get(coluna), conteudo)
+        if tipo_de_nota and COLUNA_TIPO_DE_NOTA in linha.valores:
+            linha.valores[COLUNA_TIPO_DE_NOTA] = tipo_de_nota
+        linhas.append(linha)
+    return linhas
 
 
 @dataclass
@@ -81,6 +104,9 @@ class ProcessarDocumentos:
 
     def fechar(self) -> None:
         self._repositorio.fechar()
+        fechar_assistente = getattr(self._assistente, "fechar", None)
+        if fechar_assistente:
+            fechar_assistente()
 
     def _processar_todos(
         self, execucao: int, arquivos: list[Path], destino: Path, resultado: ResultadoProcessamento
@@ -88,7 +114,7 @@ class ProcessarDocumentos:
         for arquivo in arquivos:
             try:
                 self._processar_um(execucao, Path(arquivo), resultado)
-            except (RespostaInvalida, OSError, ValueError) as erro:
+            except (RespostaInvalida, ErroServicoIA, OSError, ValueError) as erro:
                 resultado.erros.append(ErroDocumento(Path(arquivo).name, str(erro)))
 
         if not resultado.linhas:
@@ -107,16 +133,7 @@ class ProcessarDocumentos:
         if not sugestoes:
             raise RespostaInvalida("a IA não devolveu nenhuma linha para o documento")
 
-        tipo_de_nota = derivar_tipo_de_nota(COLUNA_TIPO_DE_NOTA, conteudo)
-        linhas = []
-        for ordem, sugestao in enumerate(sugestoes, start=1):
-            linha = Linha(ordem)
-            for coluna in self._colunas:
-                linha.valores[coluna] = conferir_campo(coluna, sugestao.get(coluna), conteudo)
-            if tipo_de_nota and COLUNA_TIPO_DE_NOTA in linha.valores:
-                linha.valores[COLUNA_TIPO_DE_NOTA] = tipo_de_nota
-            linhas.append(linha)
-
+        linhas = montar_linhas(sugestoes, conteudo, self._colunas)
         documento = self._repositorio.registrar_documento(execucao, conteudo, linhas)
         resultado.documentos.append(documento)
         resultado.linhas.extend((documento.nome, linha) for linha in linhas)

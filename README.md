@@ -32,6 +32,27 @@ automatizador processar exemplos\cte_1234.pdf exemplos\nfse_5501.pdf --saida sai
 
 O aplicativo nunca sobrescreve uma planilha que já existe; use `--substituir` se for essa a intenção.
 
+### Usar uma IA de verdade (OpenRouter)
+
+Só com **documentos fictícios**: o programa se recusa a enviar a um serviço externo um PDF que não tenha a marca "DOCUMENTO FICTÍCIO".
+
+1. Crie uma conta em https://openrouter.ai e gere uma chave em *Keys*.
+2. No PowerShell, defina a chave e o modelo (valem só para aquela janela; a chave nunca vai para o código):
+
+```powershell
+$env:AUTOMATIZADOR_IA_CHAVE = "cole-a-chave-aqui"
+$env:AUTOMATIZADOR_IA_MODELO = "openai/gpt-4o-mini"
+```
+
+3. Processe com a IA externa, ou compare modelos pela taxa de acerto nos fictícios:
+
+```powershell
+automatizador processar exemplos\nfse_5501.pdf --saida saida\ia.xlsx --ia externa
+automatizador medir-acerto exemplos --modelo openai/gpt-4o-mini --modelo google/gemini-2.5-flash
+```
+
+Outros serviços compatíveis com a API da OpenAI funcionam trocando `AUTOMATIZADOR_IA_ENDERECO`.
+
 Abrir a janela:
 
 ```powershell
