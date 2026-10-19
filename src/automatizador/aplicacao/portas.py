@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from automatizador.dominio.modelo import CampoSugerido, ConteudoDocumento, Linha
+from automatizador.dominio.modelo import CampoSugerido, ConteudoDocumento, Linha, ValorCampo
 
 
 class RespostaInvalida(Exception):
@@ -61,6 +61,15 @@ class ValorRegistrado:
 
 
 @dataclass(frozen=True)
+class VersaoValor:
+    versao: int
+    valor: str | None
+    origem: str
+    usuario: str | None
+    criado_em: str
+
+
+@dataclass(frozen=True)
 class ExecucaoRegistrada:
     id: int
     inicio: datetime
@@ -78,6 +87,14 @@ class Repositorio(Protocol):
         self, execucao_id: int, conteudo: ConteudoDocumento, linhas: list[Linha]
     ) -> DocumentoRegistrado:
         """Grava o documento e as linhas juntos: ou tudo fica no histórico, ou nada."""
+        ...
+
+    def registrar_correcao(self, linha_id: int, valores: list[ValorCampo], usuario: str) -> None:
+        """Grava os valores como novas versões e desfaz a aprovação da linha, numa transação só."""
+        ...
+
+    def registrar_aprovacao(self, linha_ids: list[int], usuario: str) -> None:
+        """Aprova todas as linhas ou nenhuma."""
         ...
 
     def registrar_exportacao(self, execucao_id: int, destino: Path, quantidade_linhas: int) -> None: ...

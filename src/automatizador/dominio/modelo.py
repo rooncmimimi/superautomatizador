@@ -76,6 +76,9 @@ class Linha:
     ordem: int
     valores: dict[str, ValorCampo] = field(default_factory=dict)
     pendencias: list[str] = field(default_factory=list)
+    problemas_documento: list[str] = field(default_factory=list)
+    id: int | None = None
+    aprovada: bool = False
 
     @property
     def pendente(self) -> bool:
